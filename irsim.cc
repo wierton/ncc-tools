@@ -10,6 +10,8 @@
 #include <tuple>
 #include <vector>
 
+// #define DEBUG
+
 template <class T>
 uint32_t ptr_hi(const T *ptr) {
   return reinterpret_cast<uintptr_t>(ptr) >> 32;
@@ -141,22 +143,23 @@ public:
       *textptr++ = v;
     }
 
-    std::cout << "  " << opc_to_string[opc] << " ";
+#ifdef DEBUG
+    std::cout << "  " << oldptr << ": " << opc_to_string[opc] << " ";
     for (int v : std::array<int, N>{static_cast<int>(args)...}) {
       std::cout << std::hex << "0x" << (unsigned)v << " " << std::dec;
     }
     std::cout << "\n";
+#endif
     return oldptr;
   }
 
   int *gen_br(int *target) {
-    assert(target);
     return gen_inst(Opc::br, ptr_lo(target), ptr_hi(target));
   }
 
   int *gen_cond_br(int cond, int *target) {
-    assert(target);
-    return gen_inst(Opc::br, cond, ptr_lo(target), ptr_hi(target));
+    return gen_inst(Opc::cond_br, cond, ptr_lo(target),
+                    ptr_hi(target));
   }
 
   void run(int *eip);
@@ -167,16 +170,18 @@ void Program::run(int *eip) {
   esp = &stack[0];
 
   for (; !is_quit;) {
-	auto oldeip = eip;
+    auto oldeip = eip;
     int opc = *eip++;
     int addr;
     int from, to;
     int lhs, rhs;
     int constant;
 
+#ifdef DEBUG
     printf("stack:");
     for (auto i = 0; i < stack.size(); i++) printf("%d ", stack[i]);
     printf("\n");
+#endif
 
     switch ((Opc)opc) {
     case Opc::abort: std::cerr << "unexpected instruction\n"; break;
@@ -190,152 +195,191 @@ void Program::run(int *eip) {
       to = *eip++;
       from = *eip++;
       esp[to] = ((int)(esp - &stack[0]) + from) * 4;
+#ifdef DEBUG
       printf("%p: la %d, %d\n", oldeip, to, from);
+#endif
     } break;
     case Opc::la: {
       to = *eip++;
       from = esp[*eip++];
       esp[to] = ((int)(esp - &stack[0]) + from) * 4;
+#ifdef DEBUG
       printf("%p: la %d, (%d)=%d\n", oldeip, to, eip[-1], from);
+#endif
     } break;
     case Opc::ld: {
       to = *eip++;
-	  from = *eip ++;
+      from = *eip++;
+#ifdef DEBUG
       printf("%p: ld %d, (%d)=%d\n", oldeip, to, from, esp[from]);
+#endif
       memcpy(&esp[to], (char *)&stack[0] + esp[from], sizeof(int));
     } break;
     case Opc::st: {
-	  to = *eip ++;
+      to = *eip++;
       from = *eip++;
-	  memcpy((char *)&stack[0] + esp[to], &esp[from], sizeof(int));
+      memcpy((char *)&stack[0] + esp[to], &esp[from], sizeof(int));
+#ifdef DEBUG
       printf("%p: st (%d)=%d, %d\n", oldeip, to, esp[to], from);
+#endif
     } break;
     case Opc::li: {
       to = *eip++;
       lhs = *eip++;
       esp[to] = lhs;
+#ifdef DEBUG
       if (lhs < 0 || lhs > 256)
         printf("%p: li %d %08x\n", oldeip, to, lhs);
       else
         printf("%p: li %d %d\n", oldeip, to, lhs);
+#endif
     } break;
     case Opc::mov:
       /* esp[*eip++] = esp[*eip++]; // WARNING: undefined behavior */
       to = *eip++;
       lhs = *eip++;
       esp[to] = esp[lhs];
+#ifdef DEBUG
       printf("%p: mov %d %d\n", oldeip, to, lhs);
+#endif
       break;
     case Opc::add:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] + esp[rhs];
+#ifdef DEBUG
       printf("%p: add %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::sub:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] - esp[rhs];
+#ifdef DEBUG
       printf("%p: sub %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::mul:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] * esp[rhs];
+#ifdef DEBUG
       printf("%p: mul %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::div:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] / esp[rhs];
+#ifdef DEBUG
       printf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::br: {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
+#ifdef DEBUG
       printf("%p: br %p\n", oldeip, lohi_to_ptr<int>(ptrlo, ptrhi));
+#endif
       eip = lohi_to_ptr<int>(ptrlo, ptrhi);
     } break;
     case Opc::cond_br: {
-      int cond = *eip++;
-      if (cond) {
-        uint64_t ptrlo = *eip++;
-        uint64_t ptrhi = *eip++;
-        printf("%p: br %p\n", oldeip,
-               lohi_to_ptr<int>(ptrlo, ptrhi));
-        eip = lohi_to_ptr<int>(ptrlo, ptrhi);
-      }
+      int cond = esp[*eip++];
+      uint64_t ptrlo = *eip++;
+      uint64_t ptrhi = *eip++;
+#ifdef DEBUG
+      printf("%p: cond %d br %p\n", oldeip, cond, lohi_to_ptr<int>(ptrlo, ptrhi));
+#endif
+      if (cond) { eip = lohi_to_ptr<int>(ptrlo, ptrhi); }
     } break;
     case Opc::lt:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] < esp[rhs];
+#ifdef DEBUG
       printf("%p: lt %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::le:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] <= esp[rhs];
+#ifdef DEBUG
       printf("%p: le %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::eq:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] == esp[rhs];
+#ifdef DEBUG
       printf("%p: eq %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::ge:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] >= esp[rhs];
+#ifdef DEBUG
       printf("%p: ge %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::gt:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] > esp[rhs];
+#ifdef DEBUG
       printf("%p: gt %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::ne:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] != esp[rhs];
+#ifdef DEBUG
       printf("%p: ne %d, %d, %d\n", oldeip, to, lhs, rhs);
+#endif
       break;
     case Opc::inc_esp:
       constant = *eip++;
-	  printf("%p: inc_esp %d\n", oldeip, to);
+#ifdef DEBUG
+      printf("%p: inc_esp %d\n", oldeip, to);
+#endif
       esp += constant;
       break;
     case Opc::ret: {
       if (esp == &stack[0]) {
-        printf("program quit\n");
+		std::cout << "program quit\n";
         is_quit = true;
         break;
       }
 
-	  int *oldesp = esp;
+      int *oldesp = esp;
       int retval = esp[*eip++];
       to = esp[-1];
       eip = lohi_to_ptr<int>(esp[-3], esp[-2]);
       esp -= esp[0];
       esp[to] = retval;
+#ifdef DEBUG
       printf("%p: ret %d, %d, dec %d, br %p\n", oldeip, retval, to,
              esp[0], lohi_to_ptr<int>(oldesp[-3], oldesp[-2]));
+#endif
     } break;
     case Opc::alloca:
       to = *eip++;
+#ifdef DEBUG
       printf("%p: alloca %d\n", oldeip, to);
+#endif
       if (esp + to >= &stack[stack.size()]) {
         ptrdiff_t diff = esp - &stack[0];
         assert(diff >= 0);
@@ -343,7 +387,11 @@ void Program::run(int *eip) {
         esp = &stack[diff];
       }
       break;
-    case Opc::read: abort(); break;
+    case Opc::read:
+	  std::cout << "please input a number: ";
+      to = *eip++;
+      std::cin >> esp[to];
+      break;
     case Opc::write:
       to = *eip++;
       std::cout << esp[to] << "\n";
@@ -362,6 +410,8 @@ class Compiler {
   std::map<std::string, int *> funcs;
   std::map<std::string, int *> labels;
 
+  std::map<std::string, std::vector<int *>> backfill_labels;
+
   static std::map<Stmt,
                   bool (Compiler::*)(Program *, const std::string &)>
       handlers;
@@ -372,7 +422,7 @@ class Compiler {
   static int m4[];
 
   int primary_exp(Program *prog, const std::string &tok) {
-#if 0
+#ifdef DEBUG
     std::cout << "tok is " << tok << ", stack_size is " << stack_size
               << "\n";
 #endif
@@ -426,19 +476,10 @@ public:
   int getVar(const std::string &name, unsigned size = 1) {
     auto it = vars.find(name);
     if (it == vars.end()) {
-      // std::cout << "var is " << name << "\n";
-      // std::cout << "stack_size is " << stack_size << "\n";
       std::tie(it, std::ignore) =
           vars.insert(std::pair<std::string, int>{name, stack_size});
       stack_size += size;
-      // std::cout << "stack_size is " << stack_size << "\n";
-      // std::cout << "it->second is " << it->second << "\n";
     }
-#if 0
-    std::cout << "==GET(" << name << ", " << size
-              << ") = " << it->second << "\n"
-              << ", stack.size = " << stack_size << "\n";
-#endif
     return it->second;
   }
 
@@ -457,7 +498,7 @@ public:
     if (it == vars.end())
       std::tie(it, std::ignore) =
           vars.insert(std::pair<std::string, int>{name, args_size--});
-#if 0
+#ifdef DEBUG
     std::cout << "==GET(" << name << ", " << 4 << ") = " << it->second
               << "\n";
 #endif
@@ -504,7 +545,16 @@ bool Compiler::handle_label(Program *prog, const std::string &line) {
   if (it == std::sregex_token_iterator()) return false;
 
   auto label = *it++;
-  labels[label] = prog->get_textptr();
+  auto label_ptr = prog->get_textptr();
+  labels[label] = label_ptr;
+#ifdef DEBUG
+  printf("add label %s, %p\n", label.str().c_str(), label_ptr);
+#endif
+  for (auto *ptr : backfill_labels[label]) {
+    ptr[0] = ptr_lo(label_ptr);
+    ptr[1] = ptr_hi(label_ptr);
+  }
+  backfill_labels.erase(label);
   return true;
 }
 
@@ -523,8 +573,6 @@ bool Compiler::handle_func(Program *prog, const std::string &line) {
   if (prog->curf[0] == (int)Opc::alloca) {
     prog->curf[1] = stack_size + 1;
     clear_env();
-  } else {
-    printf("???\n");
   }
   prog->curf = prog->gen_inst(Opc::alloca, 0);
   return true;
@@ -612,9 +660,11 @@ bool Compiler::handle_goto_(Program *prog, const std::string &line) {
       std::sregex_token_iterator(line.begin(), line.end(), pat, m3);
   if (it == std::sregex_token_iterator()) { return false; }
 
-  auto label = labels[*it++];
-  assert(label);
-  prog->gen_inst(Opc::br, ptr_lo(label), ptr_hi(label));
+  auto label = *it++;
+  auto label_ptr = labels[label];
+  auto code =
+      prog->gen_inst(Opc::br, ptr_lo(label_ptr), ptr_hi(label_ptr));
+  if (!label_ptr) { backfill_labels[label].push_back(code + 1); }
   return true;
 }
 
@@ -630,6 +680,7 @@ bool Compiler::handle_branch(Program *prog, const std::string &line) {
   auto y = primary_exp(prog, *it++);
 
   auto label = *it++;
+  auto label_ptr = labels[label];
 
   static std::map<std::string, Opc> s2op{
       {"<", Opc::lt},  {">", Opc::gt},  {"<=", Opc::le},
@@ -638,7 +689,8 @@ bool Compiler::handle_branch(Program *prog, const std::string &line) {
 
   auto tmp = newTemp();
   prog->gen_inst(s2op[opc], tmp, x, y);
-  prog->gen_cond_br(tmp, labels[label]);
+  auto code = prog->gen_cond_br(tmp, label_ptr);
+  if (!label_ptr) { backfill_labels[label].push_back(code + 2); }
   return true;
 }
 
@@ -745,7 +797,10 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
     std::string line;
     std::getline(is, line);
 
+#ifdef DEBUG
     std::cout << line << "\n";
+#endif
+
     for (int i = (int)Stmt::begin; i < (int)Stmt::end; i++)
       if ((this->*handlers[(Stmt)i])(&*prog, line)) {
         suc = true;
