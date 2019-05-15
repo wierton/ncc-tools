@@ -10,9 +10,25 @@
 #include <tuple>
 #include <vector>
 
-enum class stmt {
+template <class T>
+uint32_t ptr_hi(const T *ptr) {
+  return reinterpret_cast<uintptr_t>(ptr) >> 32;
+}
+
+template <class T>
+uint32_t ptr_lo(const T *ptr) {
+  return reinterpret_cast<uintptr_t>(ptr);
+}
+
+template <class T>
+const T *lohi_to_ptr(uint32_t lo, uint32_t hi) {
+  uintptr_t ptr = ((uint64_t)hi << 32) | lo;
+  return reinterpret_cast<const T *>(ptr);
+}
+
+enum class Stmt {
   begin,
-  label = stmt::begin,
+  label = Stmt::begin,
   func,
   assign,
   add,
@@ -34,7 +50,7 @@ enum class stmt {
   end,
 };
 
-enum class op {
+enum class Opc {
   abort, // as 0
   call,  // nativa call, not function call
   li,
@@ -43,8 +59,9 @@ enum class op {
   sub,
   mul,
   div,
-  takeaddr,
+  la,
   deref,
+  deref_assign,
   br,
   cond_br,
   lt,
@@ -61,8 +78,22 @@ enum class op {
   quit,
 };
 
-using VarType = uintptr_t;
-using VarMap = std::map<std::string, std::unique_ptr<VarType>>;
+std::map<Opc, std::string> opc_to_string{
+    {Opc::abort, "abort"},   {Opc::call, "call"},
+    {Opc::li, "li"},         {Opc::mov, "mov"},
+    {Opc::add, "add"},       {Opc::sub, "sub"},
+    {Opc::mul, "mul"},       {Opc::div, "div"},
+    {Opc::la, "la"},         {Opc::deref, "deref"},
+    {Opc::br, "br"},         {Opc::cond_br, "cond_br"},
+    {Opc::lt, "lt"},         {Opc::le, "le"},
+    {Opc::eq, "eq"},         {Opc::ge, "ge"},
+    {Opc::gt, "gt"},         {Opc::ne, "ne"},
+    {Opc::alloca, "alloca"}, {Opc::inc_esp, "inc_esp"},
+    {Opc::ret, "ret"},       {Opc::read, "read"},
+    {Opc::write, "write"},   {Opc::quit, "quit"},
+    {Opc::deref_assign, "deref_assign"},
+};
+
 using TransitionBlock = std::array<int, 1024>;
 
 class Program {
@@ -75,41 +106,54 @@ class Program {
   /* running context */
   std::vector<int> stack;
   int *esp;
+  int *curf;
+
+  friend class Compiler;
 
 public:
+  Program() : curf(nullptr) {
+    curblk = new TransitionBlock;
+    codes.push_back(std::unique_ptr<TransitionBlock>(curblk));
+    textptr = &curblk->at(0);
+  }
+
   int *get_textptr() const { return textptr; }
   void check_eof(unsigned N) {
     if (textptr + N + 2 >= &(*curblk)[curblk->size()]) {
       curblk = new TransitionBlock;
       codes.push_back(std::unique_ptr<TransitionBlock>(curblk));
-      *textptr++ = (int)op::br;
-      *textptr++ = (uint64_t) & (curblk->at(0));
-      *textptr++ = (uint64_t) & (curblk->at(0)) >> 32;
+      *textptr++ = (int)Opc::br;
+      *textptr++ = ptr_lo(&(curblk->at(0)));
+      *textptr++ = ptr_hi(&(curblk->at(0)));
     }
   }
 
   template <class... Args>
-  int *gen_inst(op opc, Args... args) {
+  int *gen_inst(Opc opc, Args... args) {
     constexpr unsigned N = sizeof...(args);
     check_eof(N + 1);
     auto oldptr = textptr;
     *textptr++ = (int)opc;
-    for (int v : std::array<int, N>{static_cast<int>(args)...}) { *textptr++ = v; }
+    for (int v : std::array<int, N>{static_cast<int>(args)...}) {
+      *textptr++ = v;
+    }
+
+    std::cout << "  " << opc_to_string[opc] << " ";
+    for (int v : std::array<int, N>{static_cast<int>(args)...}) {
+      std::cout << std::hex << "0x" << (unsigned)v << " " << std::dec;
+    }
+    std::cout << "\n";
     return oldptr;
   }
 
   int *gen_br(int *target) {
     assert(target);
-    unsigned int lo = (uint64_t)target;
-    unsigned int hi = (uint64_t)target >> 32;
-    return gen_inst(op::br, lo, hi);
+    return gen_inst(Opc::br, ptr_lo(target), ptr_hi(target));
   }
 
   int *gen_cond_br(int cond, int *target) {
     assert(target);
-    unsigned int lo = (uint64_t)target;
-    unsigned int hi = (uint64_t)target >> 32;
-    return gen_inst(op::br, cond, lo, hi);
+    return gen_inst(Opc::br, cond, ptr_lo(target), ptr_hi(target));
   }
 
   void run(int *eip);
@@ -121,65 +165,70 @@ void Program::run(int *eip) {
   for (;;) {
     int opc = *eip++;
     int to = 0, lhs = 0, rhs = 0;
-    switch ((op)opc) {
-    case op::abort: std::cerr << "unexpected instruction\n"; break;
-    case op::call: {
+    switch ((Opc)opc) {
+    case Opc::abort: std::cerr << "unexpected instruction\n"; break;
+    case Opc::call: {
       uintptr_t ptrlo = *eip++;
       uintptr_t ptrhi = *eip++;
       void *f = (void *)(ptrlo | ptrhi << 32);
       ((void (*)(int *, int *))f)(eip, esp);
     } break;
-    case op::li: {
+    case Opc::li: {
       to = *eip++;
       lhs = *eip++;
       esp[to] = lhs;
     } break;
-    case op::mov:
+    case Opc::mov:
       /* esp[*eip++] = esp[*eip++]; // WARNING: undefined behavior */
       to = *eip++;
       lhs = *eip++;
       esp[to] = esp[lhs];
       break;
-    case op::add:
+    case Opc::add:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] + esp[rhs];
       break;
-    case op::sub:
+    case Opc::sub:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] - esp[rhs];
       break;
-    case op::mul:
+    case Opc::mul:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] * esp[rhs];
       break;
-    case op::div:
+    case Opc::div:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] / esp[rhs];
       break;
-    case op::takeaddr:
+    case Opc::la:
       to = *eip++;
       lhs = *eip++;
       esp[to] = lhs;
       break;
-    case op::deref:
+	case Opc::deref_assign:
       to = *eip++;
       lhs = *eip++;
-      memcpy(&esp[to], (char *)esp + lhs, sizeof(int));
+      memcpy((char *)esp + esp[to], &esp[lhs], sizeof(int));
       break;
-    case op::br: {
+    case Opc::deref:
+      to = *eip++;
+      lhs = *eip++;
+      memcpy(&esp[to], (char *)esp + esp[lhs], sizeof(int));
+      break;
+    case Opc::br: {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
       eip = (int *)(ptrlo | ptrhi << 32);
     } break;
-    case op::cond_br: {
+    case Opc::cond_br: {
       int cond = *eip++;
       if (cond) {
         uint64_t ptrlo = *eip++;
@@ -187,49 +236,49 @@ void Program::run(int *eip) {
         eip = (int *)(ptrlo | ptrhi << 32);
       }
     } break;
-    case op::lt:
+    case Opc::lt:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] < esp[rhs];
       break;
-    case op::le:
+    case Opc::le:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] <= esp[rhs];
       break;
-    case op::eq:
+    case Opc::eq:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] == esp[rhs];
       break;
-    case op::ge:
+    case Opc::ge:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] >= esp[rhs];
       break;
-    case op::gt:
+    case Opc::gt:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] > esp[rhs];
       break;
-    case op::ne:
+    case Opc::ne:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] != esp[rhs];
       break;
-    case op::ret: {
+    case Opc::ret: {
       int retval = esp[*eip++];
       to = esp[-1];
       esp += esp[0];
       esp[to] = retval;
     } break;
-    case op::alloca:
+    case Opc::alloca:
       to = *eip++;
       if (esp + to >= &stack[stack.size()]) {
         ptrdiff_t diff = esp - &stack[0];
@@ -238,12 +287,12 @@ void Program::run(int *eip) {
         esp = &stack[diff];
       }
       break;
-    case op::read: abort(); break;
-    case op::write:
+    case Opc::read: abort(); break;
+    case Opc::write:
       to = *eip++;
       std::cout << esp[to] << "\n";
       break;
-    case op::quit: std::cout << "quit the program\n"; return;
+    case Opc::quit: std::cout << "quit the program\n"; return;
     }
   }
 }
@@ -256,10 +305,55 @@ class Compiler {
   std::map<std::string, int *> funcs;
   std::map<std::string, int *> labels;
 
-  static std::map<stmt, std::regex> patterns;
+  static std::map<Stmt,
+                  bool (Compiler::*)(Program *, const std::string &)>
+      handlers;
+
+  static int m1[];
+  static int m2[];
+  static int m3[];
+  static int m4[];
+
+  int primary_exp(Program *prog, const std::string &tok) {
+	std::cout << "tok is " << tok << ", stack_size is " << stack_size << "\n";
+    if (tok[0] == '#') {
+      auto tmp = newTemp();
+      prog->gen_inst(Opc::li, tmp, std::stoi(&tok[1]));
+      return tmp;
+    } else if (tok[0] == '&') {
+	  auto var = getVar(&tok[1]);
+      auto tmp = newTemp();
+      prog->gen_inst(Opc::la, tmp, var);
+      return tmp;
+    } else if (tok[0] == '*') {
+	  auto var = getVar(&tok[1]);
+      auto tmp = newTemp();
+      prog->gen_inst(Opc::deref, tmp, var);
+      return tmp;
+    } else {
+      return getVar(tok);
+    }
+  }
+
+  bool handle_label(Program *, const std::string &line);
+  bool handle_func(Program *, const std::string &line);
+  bool handle_assign(Program *, const std::string &line);
+  bool handle_arith(Program *, const std::string &line);
+  bool handle_takeaddr(Program *, const std::string &line);
+  bool handle_deref(Program *, const std::string &line);
+  bool handle_deref_assign(Program *, const std::string &line);
+  bool handle_goto_(Program *, const std::string &line);
+  bool handle_branch(Program *, const std::string &line);
+  bool handle_ret(Program *, const std::string &line);
+  bool handle_dec(Program *, const std::string &line);
+  bool handle_arg(Program *, const std::string &line);
+  bool handle_call(Program *, const std::string &line);
+  bool handle_param(Program *, const std::string &line);
+  bool handle_read(Program *, const std::string &line);
+  bool handle_write(Program *, const std::string &line);
 
 public:
-  Compiler() : stack_size(1), args_size(-3) {}
+  Compiler() { clear_env(); }
 
   void clear_env() {
     stack_size = 1;
@@ -267,24 +361,35 @@ public:
     labels.clear();
   }
 
-  int *getFunction(const std::string &fname) {
-	return funcs[fname];
-  }
+  int *getFunction(const std::string &fname) { return funcs[fname]; }
 
-  int getVar(const std::string &name, unsigned size = 4) {
+  int getVar(const std::string &name, unsigned size = 1) {
     auto it = vars.find(name);
-    if (it == vars.end())
+    if (it == vars.end()) {
+	  std::cout << "var is " << name << "\n";
+	  std::cout << "stack_size is " << stack_size << "\n";
       std::tie(it, std::ignore) =
           vars.insert(std::pair<std::string, int>{
-              name, stack_size += (size / sizeof(int))});
+              name, stack_size += size});
+	  std::cout << "stack_size is " << stack_size << "\n";
+	  std::cout << "it->second is " << it->second << "\n";
+	}
+#if 0
+    std::cout << "==GET(" << name << ", " << size
+              << ") = " << it->second << "\n"
+              << ", stack.size = " << stack_size << "\n";
+#endif
     return it->second;
   }
 
-  int newTemp() { return stack_size; }
+  int newTemp() {
+    stack_size ++;
+    return stack_size - 1;
+  }
 
   int newArg() {
-    stack_size += 4;
-    return stack_size - 4;
+    stack_size ++;
+    return stack_size - 1;
   }
 
   int getParam(const std::string &name) {
@@ -292,255 +397,316 @@ public:
     if (it == vars.end())
       std::tie(it, std::ignore) =
           vars.insert(std::pair<std::string, int>{name, args_size--});
+#if 0
+    std::cout << "==GET(" << name << ", " << 4 << ") = " << it->second
+              << "\n";
+#endif
     return it->second;
   }
 
   std::unique_ptr<Program> compile(std::istream &is);
 };
 
-std::map<stmt, std::regex> Compiler::patterns{
-    {stmt::label, std::regex(R"(^\s*LABEL\s+(\w+)\s*:\s*$)",
-                             std::regex_constants::icase)},
-    {stmt::func, std::regex(R"(^\s*FUNCTION\s+(\w+)\s*:\s*$)",
-                            std::regex_constants::icase)},
-    {stmt::assign, std::regex(R"(^\s*(\w+)\s*:=\s*(\w+)\s*$)",
-                              std::regex_constants::icase)},
-    {stmt::add,
-     std::regex(R"(^\s*(\w+)\s*:=\s*(\w+)\s++\s+(\w+)\s*$)",
-                std::regex_constants::icase)},
-    {stmt::sub,
-     std::regex(R"(^\s*(\w+)\s*:=\s*(\w+)\s+-\s+(\w+)\s*$)",
-                std::regex_constants::icase)},
-    {stmt::mul,
-     std::regex(R"(^\s*(\w+)\s*:=\s*(\w+)\s+*\s+(\w+)\s*$)",
-                std::regex_constants::icase)},
-    {stmt::div,
-     std::regex(R"(^\s*(\w+)\s*:=\s*(\w+)\s+/\s+(\w+)\s*$)",
-                std::regex_constants::icase)},
-    {stmt::takeaddr, std::regex(R"(^\s*(\w+)\s*:=\s*&(\w+)\s*$)",
-                                std::regex_constants::icase)},
-    {stmt::deref, std::regex(R"(^\s*(\w+)\s*:=\s*\*(\w+)\s*$)",
-                             std::regex_constants::icase)},
-    {stmt::deref_assign, std::regex(R"(^\s**(\w+)\s+:=\s+(\w+)\s*$)",
-                                    std::regex_constants::icase)},
-    {stmt::goto_, std::regex(R"(^\s*GOTO\s+(\w+)\s*$)",
-                             std::regex_constants::icase)},
-    {stmt::branch,
-     std::regex(
-         R"(^\s*IF\s+(\w+)\s*(<|>|<=|>=|==|!=)\s*(\w+)\s+GOTO\s+(\w+)\s*$)",
-         std::regex_constants::icase)},
-    {stmt::ret, std::regex(R"(^\s*RETURN\s+(\w+)\s*$)",
-                           std::regex_constants::icase)},
-    {stmt::dec, std::regex(R"(^\s*DEC\s+(\w+)\s+(\d+)\s*$)",
-                           std::regex_constants::icase)},
-    {stmt::arg, std::regex(R"(^\s*ARG\s+(\w+)\s*$)",
-                           std::regex_constants::icase)},
-    {stmt::call, std::regex(R"(^\s*(\w+)\s*:=\s*CALL\s+(\w+)\s*$)",
-                            std::regex_constants::icase)},
-    {stmt::param, std::regex(R"(^\s*PARAM\s+(\w+)\s*$)",
-                             std::regex_constants::icase)},
-    {stmt::read, std::regex(R"(^\s*READ\s+(\w+)\s*$)",
-                            std::regex_constants::icase)},
-    {stmt::write, std::regex(R"(^\s*WRITE\s+(\w+)\s*$)",
-                             std::regex_constants::icase)},
-};
+std::map<Stmt, bool (Compiler::*)(Program *, const std::string &)>
+    Compiler::handlers{
+        {Stmt::label, &Compiler::handle_label},
+        {Stmt::func, &Compiler::handle_func},
+        {Stmt::assign, &Compiler::handle_assign},
+        {Stmt::add, &Compiler::handle_arith},
+        {Stmt::sub, &Compiler::handle_arith},
+        {Stmt::mul, &Compiler::handle_arith},
+        {Stmt::div, &Compiler::handle_arith},
+        {Stmt::takeaddr, &Compiler::handle_takeaddr},
+        {Stmt::deref, &Compiler::handle_deref},
+        {Stmt::deref_assign, &Compiler::handle_deref_assign},
+        {Stmt::goto_, &Compiler::handle_goto_},
+        {Stmt::branch, &Compiler::handle_branch},
+        {Stmt::ret, &Compiler::handle_ret},
+        {Stmt::dec, &Compiler::handle_dec},
+        {Stmt::arg, &Compiler::handle_arg},
+        {Stmt::call, &Compiler::handle_call},
+        {Stmt::param, &Compiler::handle_param},
+        {Stmt::read, &Compiler::handle_read},
+        {Stmt::write, &Compiler::handle_write},
+    };
+
+int Compiler::m1[] = {1};
+int Compiler::m2[] = {1, 2};
+int Compiler::m3[] = {1, 2, 3};
+int Compiler::m4[] = {1, 2, 3, 4};
+
+/* stmt label */
+bool Compiler::handle_label(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*LABEL\s+(\w+)\s*:\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m1);
+
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto label = *it++;
+  labels[label] = prog->get_textptr();
+  return true;
+}
+
+/* stmt func */
+bool Compiler::handle_func(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*FUNCTION\s+(\w+)\s*:\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m1);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto f = *it++;
+
+  prog->gen_inst(Opc::abort); // last function should manually ret
+  funcs[f] = prog->get_textptr();
+
+  if (prog->curf) {
+    prog->curf[1] = stack_size + 1;
+    clear_env();
+  }
+  prog->curf = prog->gen_inst(Opc::alloca, 0);
+  return true;
+}
+
+bool Compiler::handle_assign(Program *prog, const std::string &line) {
+  std::regex pat(R"(^\s*(\w+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m2);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = getVar(*it++);
+  auto y = primary_exp(prog, *it++);
+  prog->gen_inst(Opc::mov, x, y);
+  return true;
+}
+
+bool Compiler::handle_arith(Program *prog, const std::string &line) {
+  static std::regex pat(
+      R"(^\s*(\w+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\w+)\s*(\+|\-|\*|\/)\s*(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+
+  static std::map<std::string, Opc> m{
+      {"+", Opc::add},
+      {"-", Opc::sub},
+      {"*", Opc::mul},
+      {"/", Opc::div},
+  };
+
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m4);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = getVar(*it++);
+  auto y = primary_exp(prog, *it++);
+  auto op = *it++;
+  auto z = primary_exp(prog, *it++);
+
+  prog->gen_inst(m[op], x, y, z);
+  return true;
+}
+
+bool Compiler::handle_takeaddr(Program *prog,
+                               const std::string &line) {
+  static std::regex pat(R"(^\s*(\w+)\s*:=\s*&\s*(\w+)\s*$)");
+  /* stmt assign */
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m2);
+  if (it == std::sregex_token_iterator()) return false;
+  auto x = *it++;
+  auto y = *it++;
+  prog->gen_inst(Opc::la, getVar(x), getVar(y));
+  return true;
+}
+
+bool Compiler::handle_deref(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*(\w+)\s*:=\s*\*\s*(\w+)\s*$)");
+  /* stmt assign */
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m3);
+  if (it == std::sregex_token_iterator()) return false;
+  auto x = *it++;
+  auto y = *it++;
+  prog->gen_inst(Opc::deref, getVar(x), getVar(y));
+  return true;
+}
+
+bool Compiler::handle_deref_assign(Program *prog,
+                                   const std::string &line) {
+  static std::regex pat(
+      R"(^\s*\*(\w+)\s+:=\s+(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m3);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = getVar(*it++);
+  auto y = primary_exp(prog, *it++);
+  prog->gen_inst(Opc::deref_assign, x, y);
+  return true;
+}
+
+bool Compiler::handle_goto_(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*GOTO\s+(\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m3);
+  if (it == std::sregex_token_iterator()) { return false; }
+
+  auto label = labels[*it++];
+  assert(label);
+  prog->gen_inst(Opc::br, ptr_lo(label), ptr_hi(label));
+  return true;
+}
+
+bool Compiler::handle_branch(Program *prog, const std::string &line) {
+  static std::regex pat(
+      R"(^\s*IF\s+(#[\+\-]?\d+|[&\*]?\w+)\s*(<|>|<=|>=|==|!=)\s*(#[\+\-]?\d+|[&\*]?\w+)\s+GOTO\s+(\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m4);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = primary_exp(prog, *it++);
+  auto opc = *it++;
+  auto y = primary_exp(prog, *it++);
+
+  auto label = *it++;
+
+  static std::map<std::string, Opc> s2op{
+      {"<", Opc::lt},  {">", Opc::gt},  {"<=", Opc::le},
+      {">=", Opc::ge}, {"==", Opc::eq}, {"!=", Opc::ne},
+  };
+
+  auto tmp = newTemp();
+  prog->gen_inst(s2op[opc], tmp, x, y);
+  prog->gen_cond_br(tmp, labels[label]);
+  return true;
+}
+
+bool Compiler::handle_ret(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*RETURN\s+(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m4);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = *it++;
+  prog->gen_inst(Opc::ret, primary_exp(prog, x));
+  return true;
+}
+
+bool Compiler::handle_dec(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*DEC\s+(\w+)\s+(\d+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m2);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = *it++;
+  auto size = stoi(*it++);
+  getVar(x, (size + 3) / 4);
+  return true;
+}
+
+bool Compiler::handle_arg(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*ARG\s+(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m2);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = primary_exp(prog, *it++);
+  auto arg = newArg();
+  prog->gen_inst(Opc::mov, arg, x);
+  return true;
+}
+
+bool Compiler::handle_call(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*(\w+)\s*:=\s*CALL\s+(\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m2);
+  if (it == std::sregex_token_iterator()) return false;
+  auto to = *it++;
+  auto f = *it++;
+
+  auto lo = newArg();
+  auto hi = newArg();
+  auto ret = newArg();
+  auto inc = newArg();
+
+  prog->gen_inst(Opc::li, lo, ptr_lo(prog->curf));
+  prog->gen_inst(Opc::li, hi, ptr_hi(prog->curf));
+  prog->gen_inst(Opc::la, ret, getVar(to));
+  prog->gen_inst(Opc::li, inc, inc);
+  prog->gen_inst(Opc::inc_esp, inc);
+
+  prog->gen_br(funcs[f]);
+  return true;
+}
+
+bool Compiler::handle_param(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*PARAM\s+(\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m1);
+  if (it == std::sregex_token_iterator()) return false;
+  getParam(*it++);
+  return true;
+}
+
+bool Compiler::handle_read(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*READ\s+(\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m1);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = *it++;
+  prog->gen_inst(Opc::read, getVar(x));
+  return true;
+}
+
+bool Compiler::handle_write(Program *prog, const std::string &line) {
+  static std::regex pat(R"(^\s*WRITE\s+(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+  auto it =
+      std::sregex_token_iterator(line.begin(), line.end(), pat, m1);
+  if (it == std::sregex_token_iterator()) return false;
+
+  auto x = primary_exp(prog, *it++);
+  prog->gen_inst(Opc::write, x);
+  return true;
+}
 
 std::unique_ptr<Program> Compiler::compile(std::istream &is) {
-  int *curf = nullptr;
   auto prog = std::make_unique<Program>();
+  unsigned lineno = 0;
   while ((is.peek(), is.good())) {
+    bool suc = false;
+    lineno++;
     std::string line;
     std::getline(is, line);
 
-    int m1[] = {0};
-    int m2[] = {0, 1};
-    int m3[] = {0, 1, 2};
-    int m4[] = {0, 1, 2, 3};
-    auto end = std::sregex_token_iterator();
-
-    /* stmt label */
-    auto it = std::sregex_token_iterator(line.begin(), line.end(),
-                                         patterns[stmt::label], m1);
-    if (it != end) {
-      auto label = *it++;
-      labels[label] = prog->get_textptr();
-      continue;
-    }
-
-    /* stmt func */
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::func], m1);
-    if (it != end) {
-      auto f = *it++;
-      prog->gen_inst(op::abort);
-      if (curf) {
-        curf[1] = stack_size;
-        clear_env();
+	std::cout << line << "\n";
+    for (int i = (int)Stmt::begin; i < (int)Stmt::end; i++)
+      if ((this->*handlers[(Stmt)i])(&*prog, line)) {
+        suc = true;
+        break;
       }
-      curf = prog->gen_inst(op::alloca, 0);
+
+    if (suc) continue;
+
+    if (line.find_first_not_of("\r\n\v\f\t ") == line.npos) {
       continue;
     }
 
-    /* stmt assign */
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::assign], m2);
-    if (it != end) {
-      auto x = *it++;
-      auto y = *it++;
-      prog->gen_inst(op::mov, getVar(x), getVar(y));
-      continue;
-    }
-
-    /* stmt add */
-    std::map<stmt, op> m{
-        {stmt::add, op::add},
-        {stmt::sub, op::sub},
-        {stmt::mul, op::mul},
-        {stmt::div, op::div},
-    };
-    for (auto [s, o] : m) {
-      it = std::sregex_token_iterator(line.begin(), line.end(),
-                                      patterns[s], m3);
-      if (it != end) {
-        auto x = *it++;
-        auto y = *it++;
-        auto z = *it++;
-        prog->gen_inst(o, getVar(x), getVar(y), getVar(z));
-        continue;
-      }
-    }
-
-    /* stmt assign */
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::takeaddr], m3);
-    if (it != end) {
-      auto x = *it++;
-      auto y = *it++;
-      prog->gen_inst(op::takeaddr, getVar(x), getVar(y));
-      continue;
-    }
-
-    /* stmt assign */
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::deref], m3);
-    if (it != end) {
-      auto x = *it++;
-      auto y = *it++;
-      prog->gen_inst(op::deref, getVar(x), getVar(y));
-      continue;
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::deref_assign], m3);
-    if (it != end) {
-      auto x = *it++;
-      auto y = *it++;
-      auto tmp = newTemp();
-      prog->gen_inst(op::deref, tmp, getVar(x));
-      prog->gen_inst(op::mov, tmp, getVar(y));
-      continue;
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::goto_], m3);
-    if (it != end) {
-      auto label = labels[*it++];
-      assert(label);
-      unsigned int lo = (uint64_t)label;
-      unsigned int hi = (uint64_t)label >> 32;
-      prog->gen_inst(op::br, lo, hi);
-      continue;
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::branch], m4);
-    if (it != end) {
-      auto x = *it++;
-      auto opc = *it++;
-      auto y = *it++;
-      auto label = *it++;
-
-      static std::map<std::string, op> s2op{
-          {"<", op::lt},  {">", op::gt},  {"<=", op::le},
-          {">=", op::ge}, {"==", op::eq}, {"!=", op::ne},
-      };
-
-      auto tmp = newTemp();
-      prog->gen_inst(s2op[opc], tmp, getVar(x), getVar(y));
-      prog->gen_cond_br(tmp, labels[label]);
-      continue;
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::ret], m4);
-    if (it != end) {
-      auto x = *it++;
-      prog->gen_inst(op::ret, getVar(x));
-      continue;
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::dec], m2);
-    if (it != end) {
-      auto x = *it++;
-      auto size = stoi(*it++);
-      getVar(x, size);
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::arg], m2);
-    if (it != end) {
-      auto x = *it++;
-      auto arg = newArg();
-      prog->gen_inst(op::mov, arg, getVar(x));
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::call], m2);
-    if (it != end) {
-      auto to = *it++;
-      auto f = *it++;
-
-      auto lo = newArg();
-      auto hi = newArg();
-      auto ret = newArg();
-      auto inc = newArg();
-
-      prog->gen_inst(op::li, lo, (uint64_t)curf);
-      prog->gen_inst(op::li, hi, (uint64_t)curf >> 32);
-      prog->gen_inst(op::takeaddr, ret, getVar(to));
-      prog->gen_inst(op::li, inc, inc);
-      prog->gen_inst(op::inc_esp, inc);
-
-      prog->gen_br(funcs[f]);
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::param], m1);
-    if (it != end) { getParam(*it++); }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::read], m1);
-    if (it != end) {
-      auto x = *it++;
-      prog->gen_inst(op::read, getVar(x));
-    }
-
-    it = std::sregex_token_iterator(line.begin(), line.end(),
-                                    patterns[stmt::write], m1);
-    if (it != end) {
-      auto x = *it++;
-      prog->gen_inst(op::write, getVar(x));
-    }
+    std::cerr << "syntax error at line " << lineno << ": '" << line
+              << "'\n";
   }
   return prog;
 }
 
-int main() {
-  std::ifstream ifs("a.ir");
+int main(int argc, const char *argv[]) {
+  if (argc <= 1) {
+    std::cerr << "usage: irsim [*.ir]\n";
+    return 0;
+  }
+
+  std::clog << "load " << argv[1] << "\n";
+  std::ifstream ifs(argv[1]);
 
   Compiler compiler;
   auto prog = compiler.compile(ifs);
-  prog->run(compiler.getFunction("main"));
+  // prog->run(compiler.getFunction("main"));
   return 0;
 }

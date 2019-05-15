@@ -9,7 +9,7 @@ $(BIN): irsim.cc
 	@g++ $(CXXFLAGS) $^ -o $@
 
 run: $(BIN)
-	@$(BIN)
+	@$(BIN) test/add.ir
 
 gdb: $(BIN)
 	gdb $(BIN)
