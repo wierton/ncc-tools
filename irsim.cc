@@ -267,6 +267,10 @@ public:
     labels.clear();
   }
 
+  int *getFunction(const std::string &fname) {
+	return funcs[fname];
+  }
+
   int getVar(const std::string &name, unsigned size = 4) {
     auto it = vars.find(name);
     if (it == vars.end())
@@ -535,5 +539,8 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
 int main() {
   std::ifstream ifs("a.ir");
 
+  Compiler compiler;
+  auto prog = compiler.compile(ifs);
+  prog->run(compiler.getFunction("main"));
   return 0;
 }
