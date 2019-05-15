@@ -53,6 +53,7 @@ enum class Stmt {
 enum class Opc {
   abort, // as 0
   call,  // nativa call, not function call
+  lai,
   la,
   ld,
   st,
@@ -79,19 +80,19 @@ enum class Opc {
 };
 
 std::map<Opc, std::string> opc_to_string{
-    {Opc::abort, "abort"},   {Opc::call, "call"},
-    {Opc::la, "la"},         {Opc::ld, "ld"},
-    {Opc::st, "st"},         {Opc::inc_esp, "inc_esp"},
-    {Opc::li, "li"},         {Opc::mov, "mov"},
-    {Opc::add, "add"},       {Opc::sub, "sub"},
-    {Opc::mul, "mul"},       {Opc::div, "div"},
-    {Opc::br, "br"},         {Opc::cond_br, "cond_br"},
-    {Opc::lt, "lt"},         {Opc::le, "le"},
-    {Opc::eq, "eq"},         {Opc::ge, "ge"},
-    {Opc::gt, "gt"},         {Opc::ne, "ne"},
-    {Opc::alloca, "alloca"}, {Opc::ret, "ret"},
-    {Opc::read, "read"},     {Opc::write, "write"},
-    {Opc::quit, "quit"},
+    {Opc::abort, "abort"},     {Opc::call, "call"},
+    {Opc::lai, "lai"},         {Opc::la, "la"},
+    {Opc::ld, "ld"},           {Opc::st, "st"},
+    {Opc::inc_esp, "inc_esp"}, {Opc::li, "li"},
+    {Opc::mov, "mov"},         {Opc::add, "add"},
+    {Opc::sub, "sub"},         {Opc::mul, "mul"},
+    {Opc::div, "div"},         {Opc::br, "br"},
+    {Opc::cond_br, "cond_br"}, {Opc::lt, "lt"},
+    {Opc::le, "le"},           {Opc::eq, "eq"},
+    {Opc::ge, "ge"},           {Opc::gt, "gt"},
+    {Opc::ne, "ne"},           {Opc::alloca, "alloca"},
+    {Opc::ret, "ret"},         {Opc::read, "read"},
+    {Opc::write, "write"},     {Opc::quit, "quit"},
 };
 
 using TransitionBlock = std::array<int, 1024>;
@@ -166,6 +167,7 @@ void Program::run(int *eip) {
   esp = &stack[0];
 
   for (; !is_quit;) {
+	auto oldeip = eip;
     int opc = *eip++;
     int addr;
     int from, to;
@@ -184,72 +186,78 @@ void Program::run(int *eip) {
       void *f = (void *)(ptrlo | ptrhi << 32);
       ((void (*)(int *, int *))f)(eip, esp);
     } break;
+    case Opc::lai: {
+      to = *eip++;
+      from = *eip++;
+      esp[to] = ((int)(esp - &stack[0]) + from) * 4;
+      printf("%p: la %d, %d\n", oldeip, to, from);
+    } break;
     case Opc::la: {
       to = *eip++;
       from = esp[*eip++];
-      esp[to] = (int)(esp - &stack[0]) + from;
-      printf("%p: la %d %d\n", eip - 1, to, from);
+      esp[to] = ((int)(esp - &stack[0]) + from) * 4;
+      printf("%p: la %d, (%d)=%d\n", oldeip, to, eip[-1], from);
     } break;
     case Opc::ld: {
       to = *eip++;
-      addr = esp[*eip++];
-      esp[to] = esp[addr];
-      printf("%p: ld %d %d\n", eip - 1, to, addr);
+	  from = *eip ++;
+      printf("%p: ld %d, (%d)=%d\n", oldeip, to, from, esp[from]);
+      memcpy(&esp[to], (char *)&stack[0] + esp[from], sizeof(int));
     } break;
     case Opc::st: {
-      addr = esp[*eip++];
+	  to = *eip ++;
       from = *eip++;
-      esp[addr] = esp[from];
-      printf("%p: st %d %d\n", eip - 1, addr, from);
+	  memcpy((char *)&stack[0] + esp[to], &esp[from], sizeof(int));
+      printf("%p: st (%d)=%d, %d\n", oldeip, to, esp[to], from);
     } break;
     case Opc::li: {
       to = *eip++;
       lhs = *eip++;
       esp[to] = lhs;
       if (lhs < 0 || lhs > 256)
-        printf("%p: li %d %08x\n", eip - 1, to, lhs);
+        printf("%p: li %d %08x\n", oldeip, to, lhs);
       else
-        printf("%p: li %d %d\n", eip - 1, to, lhs);
+        printf("%p: li %d %d\n", oldeip, to, lhs);
     } break;
     case Opc::mov:
       /* esp[*eip++] = esp[*eip++]; // WARNING: undefined behavior */
       to = *eip++;
       lhs = *eip++;
       esp[to] = esp[lhs];
-      printf("%p: mov %d %d\n", eip - 1, to, lhs);
+      printf("%p: mov %d %d\n", oldeip, to, lhs);
       break;
     case Opc::add:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] + esp[rhs];
-      printf("%p: add %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: add %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::sub:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] - esp[rhs];
-      printf("%p: sub %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: sub %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::mul:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] * esp[rhs];
-      printf("%p: mul %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: mul %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::div:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] / esp[rhs];
-      printf("%p: div %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::br: {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
-      printf("%p: br %p\n", eip - 1, lohi_to_ptr<int>(ptrlo, ptrhi));
+      printf("%p: br %p\n", oldeip, lohi_to_ptr<int>(ptrlo, ptrhi));
       eip = lohi_to_ptr<int>(ptrlo, ptrhi);
     } break;
     case Opc::cond_br: {
@@ -257,7 +265,7 @@ void Program::run(int *eip) {
       if (cond) {
         uint64_t ptrlo = *eip++;
         uint64_t ptrhi = *eip++;
-        printf("%p: br %p\n", eip - 1,
+        printf("%p: br %p\n", oldeip,
                lohi_to_ptr<int>(ptrlo, ptrhi));
         eip = lohi_to_ptr<int>(ptrlo, ptrhi);
       }
@@ -267,46 +275,47 @@ void Program::run(int *eip) {
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] < esp[rhs];
-      printf("%p: lt %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: lt %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::le:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] <= esp[rhs];
-      printf("%p: le %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: le %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::eq:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] == esp[rhs];
-      printf("%p: eq %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: eq %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::ge:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] >= esp[rhs];
-      printf("%p: ge %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: ge %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::gt:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] > esp[rhs];
-      printf("%p: gt %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: gt %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::ne:
       to = *eip++;
       lhs = *eip++;
       rhs = *eip++;
       esp[to] = esp[lhs] != esp[rhs];
-      printf("%p: ne %d, %d, %d\n", eip - 1, to, lhs, rhs);
+      printf("%p: ne %d, %d, %d\n", oldeip, to, lhs, rhs);
       break;
     case Opc::inc_esp:
-      to = *eip++;
-      esp += to;
+      constant = *eip++;
+	  printf("%p: inc_esp %d\n", oldeip, to);
+      esp += constant;
       break;
     case Opc::ret: {
       if (esp == &stack[0]) {
@@ -315,17 +324,18 @@ void Program::run(int *eip) {
         break;
       }
 
+	  int *oldesp = esp;
       int retval = esp[*eip++];
       to = esp[-1];
-      esp[to] = retval;
-      printf("%p: ret %d, %d, dec %d, br %p\n", eip - 1, retval, to,
-             esp[0], lohi_to_ptr<int>(esp[-3], esp[-2]));
       eip = lohi_to_ptr<int>(esp[-3], esp[-2]);
       esp -= esp[0];
+      esp[to] = retval;
+      printf("%p: ret %d, %d, dec %d, br %p\n", oldeip, retval, to,
+             esp[0], lohi_to_ptr<int>(oldesp[-3], oldesp[-2]));
     } break;
     case Opc::alloca:
       to = *eip++;
-      printf("%p: alloca %d\n", eip - 1, to);
+      printf("%p: alloca %d\n", oldeip, to);
       if (esp + to >= &stack[stack.size()]) {
         ptrdiff_t diff = esp - &stack[0];
         assert(diff >= 0);
@@ -373,15 +383,12 @@ class Compiler {
     } else if (tok[0] == '&') {
       auto var = getVar(&tok[1]);
       auto tmp = newTemp();
-      prog->gen_inst(Opc::li, tmp, var);
-      prog->gen_inst(Opc::la, tmp, tmp);
+      prog->gen_inst(Opc::lai, tmp, var);
       return tmp;
     } else if (tok[0] == '*') {
       auto var = getVar(&tok[1]);
       auto tmp = newTemp();
-      prog->gen_inst(Opc::li, tmp, var);
-      prog->gen_inst(Opc::la, tmp, tmp);
-      prog->gen_inst(Opc::ld, tmp, tmp);
+      prog->gen_inst(Opc::ld, tmp, var);
       return tmp;
     } else {
       return getVar(tok);
@@ -581,8 +588,7 @@ bool Compiler::handle_deref(Program *prog, const std::string &line) {
   auto x = getVar(*it++);
   auto y = getVar(*it++);
   auto tmp = newTemp();
-  prog->gen_inst(Opc::la, tmp, y);
-  prog->gen_inst(Opc::ld, x, tmp);
+  prog->gen_inst(Opc::ld, x, y);
   return true;
 }
 
