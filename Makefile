@@ -2,7 +2,7 @@ OBJ_DIR := build
 BIN := $(OBJ_DIR)/irsim
 
 .DEFAULT_GOAL := $(BIN)
-CXXFLAGS := -std=c++17 -O0 -ggdb3
+CXXFLAGS := -std=c++17 -O0 -ggdb3 -Wall
 
 $(BIN): irsim.cc
 	@mkdir -p $(@D)

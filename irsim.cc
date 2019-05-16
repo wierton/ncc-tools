@@ -11,16 +11,16 @@
 #include <tuple>
 #include <vector>
 
-// #define DEBUG
+#define DEBUG
 
 template <class T>
-uint32_t ptr_hi(const T *ptr) {
-  return reinterpret_cast<uintptr_t>(ptr) >> 32;
+int ptr_hi(const T *ptr) {
+  return static_cast<int>(reinterpret_cast<uintptr_t>(ptr) >> 32);
 }
 
 template <class T>
-uint32_t ptr_lo(const T *ptr) {
-  return reinterpret_cast<uintptr_t>(ptr);
+int ptr_lo(const T *ptr) {
+  return static_cast<int>(reinterpret_cast<uintptr_t>(ptr));
 }
 
 template <class T>
@@ -127,7 +127,7 @@ public:
       *textptr++ = (int)Opc::br;
       *textptr++ = ptr_lo(&(curblk->at(0)));
       *textptr++ = ptr_hi(&(curblk->at(0)));
-			textptr = &curblk->at(0);
+      textptr = &curblk->at(0);
     }
   }
 
@@ -164,12 +164,25 @@ public:
 
 void Program::run(int *eip) {
   bool is_quit = false;
+
+  auto lo = 0, hi = 1, ret = 2, inc = 3;
+  int _start[] = {
+      (int)Opc::alloca, 4,
+      (int)Opc::li, lo, ptr_lo(&_start[19]),
+      (int)Opc::li, hi, ptr_hi(&_start[19]),
+      (int)Opc::li, ret, 0,
+      (int)Opc::li, inc, inc,
+      (int)Opc::inc_esp, inc,
+      (int)Opc::br, ptr_lo(eip), ptr_hi(eip),
+      (int)Opc::quit, 0,
+  };
+
+  eip = &_start[0];
   esp = &stack[0];
 
   for (; !is_quit;) {
     auto oldeip = eip;
     int opc = *eip++;
-    int addr;
     int from, to;
     int lhs, rhs;
     int constant;
@@ -177,7 +190,7 @@ void Program::run(int *eip) {
 #ifdef DEBUG
     printf("stack:\n");
     constexpr int step = 6;
-    for (auto i = 0; i < stack.size(); i += step) {
+    for (auto i = 0u; i < stack.size(); i += step) {
       printf("%02d: ", i);
       for (auto j = i; j < i + step && j < stack.size(); j++) {
         printf("%08x ", stack[j]);
@@ -361,12 +374,6 @@ void Program::run(int *eip) {
       esp += constant;
       break;
     case Opc::ret: {
-      if (esp == &stack[0]) {
-        std::cout << "program quit\n";
-        is_quit = true;
-        break;
-      }
-
       int *oldesp = esp;
       int retval = esp[*eip++];
       to = esp[-1];
@@ -398,8 +405,14 @@ void Program::run(int *eip) {
       to = *eip++;
       std::cout << esp[to] << "\n";
       break;
-    case Opc::quit: std::cout << "quit the program\n"; return;
-    default: printf("unexpected opc %d\n", opc); abort();
+    case Opc::quit:
+      is_quit = true;
+      std::cout << "quit the program\n";
+      break;
+    default:
+      printf("unexpected opc %d\n", opc);
+      abort();
+      break;
     }
   }
 }
@@ -805,10 +818,10 @@ int main(int argc, const char *argv[]) {
   std::clog << "load " << argv[1] << "\n";
   std::ifstream ifs(argv[1]);
 
-	if (!ifs.good()) {
-		std::cerr << "'" << argv[1] << "' no such file\n";
-		return 0;
-	}
+  if (!ifs.good()) {
+    std::cerr << "'" << argv[1] << "' no such file\n";
+    return 0;
+  }
 
   Compiler compiler;
   auto prog = compiler.compile(ifs);
