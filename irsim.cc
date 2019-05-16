@@ -202,10 +202,11 @@ void Program::run(int *eip) {
     switch ((Opc)opc) {
     case Opc::abort: std::cerr << "unexpected instruction\n"; break;
     case Opc::call: {
-      uintptr_t ptrlo = *eip++;
-      uintptr_t ptrhi = *eip++;
-      void *f = (void *)(ptrlo | ptrhi << 32);
-      ((void (*)(int *, int *))f)(eip, esp);
+      int ptrlo = *eip++;
+      int ptrhi = *eip++;
+      using F = void (int *, int *);
+      F *f = lohi_to_ptr<F>(ptrlo, ptrhi);
+      f(eip, esp);
     } break;
     case Opc::lai: {
       to = *eip++;
