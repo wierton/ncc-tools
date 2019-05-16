@@ -1,12 +1,20 @@
 OBJ_DIR := build
+SRCS := irsim.cc
+SRCS += $(shell find libfmt/ -name "*.cc")
+OBJS := $(patsubst %.cc,$(OBJ_DIR)/%.o,$(SRCS))
 BIN := $(OBJ_DIR)/irsim
 
 .DEFAULT_GOAL := $(BIN)
-CXXFLAGS := -std=c++17 -O0 -ggdb3 -Wall
+CXXFLAGS := -Iinclude -std=c++17 -O0 -ggdb3 -Wall
 
-$(BIN): irsim.cc
+$(BIN): $(OBJS)
+	@echo "+ LNK $@"
+	@g++ $^ -o $@
+
+$(OBJ_DIR)/%.o: %.cc
+	@echo "+ CC $<"
 	@mkdir -p $(@D)
-	@g++ $(CXXFLAGS) $^ -o $@
+	@g++ -c $(CXXFLAGS) $< -o $@
 
 run: $(BIN)
 	@$(BIN) test/sgn.ir

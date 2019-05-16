@@ -11,7 +11,10 @@
 #include <tuple>
 #include <vector>
 
-#define DEBUG
+#include "fmt/printf.h"
+
+#define LOGIR
+// #define DEBUG
 
 template <class T>
 int ptr_hi(const T *ptr) {
@@ -55,7 +58,7 @@ enum class Stmt {
 
 enum class Opc {
   abort, // as 0
-  call,  // nativa call, not function call
+  call,  // native call, not function call
   lai,
   la,
   ld,
@@ -142,11 +145,11 @@ public:
     }
 
 #ifdef DEBUG
-    std::cout << "  " << oldptr << ": " << opc_to_string[opc] << " ";
+    fmt::printf("  %p: %s", fmt::ptr(oldptr), opc_to_string[opc]);
     for (int v : std::array<int, N>{static_cast<int>(args)...}) {
-      std::cout << std::hex << "0x" << (unsigned)v << " " << std::dec;
+      fmt::printf("0x%x ", v);
     }
-    std::cout << "\n";
+    fmt::printf("\n");
 #endif
     return oldptr;
   }
@@ -167,53 +170,70 @@ void Program::run(int *eip) {
 
   auto lo = 0, hi = 1, ret = 2, inc = 3;
   int _start[] = {
-      (int)Opc::alloca, 4,
-      (int)Opc::li, lo, ptr_lo(&_start[19]),
-      (int)Opc::li, hi, ptr_hi(&_start[19]),
-      (int)Opc::li, ret, 0,
-      (int)Opc::li, inc, inc,
-      (int)Opc::inc_esp, inc,
-      (int)Opc::br, ptr_lo(eip), ptr_hi(eip),
-      (int)Opc::quit, 0,
+      (int)Opc::alloca,
+      4,
+      (int)Opc::li,
+      lo,
+      ptr_lo(&_start[19]),
+      (int)Opc::li,
+      hi,
+      ptr_hi(&_start[19]),
+      (int)Opc::li,
+      ret,
+      0,
+      (int)Opc::li,
+      inc,
+      inc,
+      (int)Opc::inc_esp,
+      inc,
+      (int)Opc::br,
+      ptr_lo(eip),
+      ptr_hi(eip),
+      (int)Opc::quit,
+      0,
   };
 
   eip = &_start[0];
   esp = &stack[0];
 
   for (; !is_quit;) {
+#ifdef DEBUG
     auto oldeip = eip;
+#endif
     int opc = *eip++;
     int from, to;
     int lhs, rhs;
     int constant;
 
 #ifdef DEBUG
-    printf("stack:\n");
+    fmt::printf("stack:\n");
     constexpr int step = 6;
     for (auto i = 0u; i < stack.size(); i += step) {
-      printf("%02d: ", i);
+      fmt::printf("%02d: ", i);
       for (auto j = i; j < i + step && j < stack.size(); j++) {
-        printf("%08x ", stack[j]);
+        fmt::printf("%08x ", stack[j]);
       }
-      printf("\n");
+      fmt::printf("\n");
     }
 #endif
 
     switch ((Opc)opc) {
-    case Opc::abort: std::cerr << "unexpected instruction\n"; break;
+    case Opc::abort: fmt::printf("unexpected instruction\n"); break;
     case Opc::call: {
       int ptrlo = *eip++;
       int ptrhi = *eip++;
-      using F = void (int *, int *);
+      int nr_args = *eip++;
+      using F = void(int *, int *);
       F *f = lohi_to_ptr<F>(ptrlo, ptrhi);
       f(eip, esp);
+      eip += nr_args;
     } break;
     case Opc::lai: {
       to = *eip++;
       from = *eip++;
       esp[to] = ((int)(esp - &stack[0]) + from) * 4;
 #ifdef DEBUG
-      printf("%p: lai %d, %d\n", oldeip, to, from);
+      fmt::printf("%p: lai %d, %d\n", fmt::ptr(oldeip), to, from);
 #endif
     } break;
     case Opc::la: {
@@ -221,14 +241,15 @@ void Program::run(int *eip) {
       from = esp[*eip++];
       esp[to] = ((int)(esp - &stack[0]) + from) * 4;
 #ifdef DEBUG
-      printf("%p: la %d, (%d)=%d\n", oldeip, to, eip[-1], from);
+      fmt::printf("%p: la %d, (%d)=%d\n", fmt::ptr(oldeip), to, eip[-1], from);
 #endif
     } break;
     case Opc::ld: {
       to = *eip++;
       from = *eip++;
 #ifdef DEBUG
-      printf("%p: ld %d, (%d)=%d\n", oldeip, to, from, esp[from]);
+      fmt::printf("%p: ld %d, (%d)=%d\n", fmt::ptr(oldeip), to, from,
+                  esp[from]);
 #endif
       memcpy(&esp[to], (char *)&stack[0] + esp[from], sizeof(int));
     } break;
@@ -237,7 +258,7 @@ void Program::run(int *eip) {
       from = *eip++;
       memcpy((char *)&stack[0] + esp[to], &esp[from], sizeof(int));
 #ifdef DEBUG
-      printf("%p: st (%d)=%d, %d\n", oldeip, to, esp[to], from);
+      fmt::printf("%p: st (%d)=%d, %d\n", fmt::ptr(oldeip), to, esp[to], from);
 #endif
     } break;
     case Opc::li: {
@@ -246,9 +267,9 @@ void Program::run(int *eip) {
       esp[to] = lhs;
 #ifdef DEBUG
       if (lhs < 0 || lhs > 256)
-        printf("%p: li %d %08x\n", oldeip, to, lhs);
+        fmt::printf("%p: li %d %08x\n", fmt::ptr(oldeip), to, lhs);
       else
-        printf("%p: li %d %d\n", oldeip, to, lhs);
+        fmt::printf("%p: li %d %d\n", fmt::ptr(oldeip), to, lhs);
 #endif
     } break;
     case Opc::mov:
@@ -257,7 +278,7 @@ void Program::run(int *eip) {
       lhs = *eip++;
       esp[to] = esp[lhs];
 #ifdef DEBUG
-      printf("%p: mov %d %d\n", oldeip, to, lhs);
+      fmt::printf("%p: mov %d %d\n", fmt::ptr(oldeip), to, lhs);
 #endif
       break;
     case Opc::add:
@@ -266,7 +287,7 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] + esp[rhs];
 #ifdef DEBUG
-      printf("%p: add %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: add %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::sub:
@@ -275,7 +296,7 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] - esp[rhs];
 #ifdef DEBUG
-      printf("%p: sub %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: sub %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::mul:
@@ -284,7 +305,7 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] * esp[rhs];
 #ifdef DEBUG
-      printf("%p: mul %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: mul %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::div:
@@ -293,14 +314,15 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] / esp[rhs];
 #ifdef DEBUG
-      printf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: div %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::br: {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
 #ifdef DEBUG
-      printf("%p: br %p\n", oldeip, lohi_to_ptr<int>(ptrlo, ptrhi));
+      fmt::printf("%p: br %p\n", fmt::ptr(oldeip),
+                  lohi_to_ptr<void>(ptrlo, ptrhi));
 #endif
       eip = lohi_to_ptr<int>(ptrlo, ptrhi);
     } break;
@@ -309,8 +331,8 @@ void Program::run(int *eip) {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
 #ifdef DEBUG
-      printf("%p: cond %d br %p\n", oldeip, cond,
-             lohi_to_ptr<int>(ptrlo, ptrhi));
+      fmt::printf("%p: cond %d br %p\n", fmt::ptr(oldeip), cond,
+                  lohi_to_ptr<void>(ptrlo, ptrhi));
 #endif
       if (cond) { eip = lohi_to_ptr<int>(ptrlo, ptrhi); }
     } break;
@@ -320,7 +342,7 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] < esp[rhs];
 #ifdef DEBUG
-      printf("%p: lt %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: lt %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::le:
@@ -329,7 +351,7 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] <= esp[rhs];
 #ifdef DEBUG
-      printf("%p: le %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: le %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::eq:
@@ -338,7 +360,7 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] == esp[rhs];
 #ifdef DEBUG
-      printf("%p: eq %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: eq %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::ge:
@@ -347,7 +369,7 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] >= esp[rhs];
 #ifdef DEBUG
-      printf("%p: ge %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: ge %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::gt:
@@ -356,7 +378,7 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] > esp[rhs];
 #ifdef DEBUG
-      printf("%p: gt %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: gt %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::ne:
@@ -365,30 +387,32 @@ void Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] != esp[rhs];
 #ifdef DEBUG
-      printf("%p: ne %d, %d, %d\n", oldeip, to, lhs, rhs);
+      fmt::printf("%p: ne %d, %d, %d\n", fmt::ptr(oldeip), to, lhs, rhs);
 #endif
       break;
     case Opc::inc_esp: constant = *eip++;
 #ifdef DEBUG
-      printf("%p: inc_esp %d\n", oldeip, to);
+      fmt::printf("%p: inc_esp %d\n", fmt::ptr(oldeip), to);
 #endif
       esp += constant;
       break;
     case Opc::ret: {
+#ifdef DEBUG
       int *oldesp = esp;
+#endif
       int retval = esp[*eip++];
       to = esp[-1];
       eip = lohi_to_ptr<int>(esp[-3], esp[-2]);
       esp -= esp[0];
       esp[to] = retval;
 #ifdef DEBUG
-      printf("%p: ret %d, %d, dec %d, br %p\n", oldeip, retval, to, esp[0],
-             lohi_to_ptr<int>(oldesp[-3], oldesp[-2]));
+      fmt::printf("%p: ret %d, %d, dec %d, br %p\n", fmt::ptr(oldeip), retval,
+                  to, esp[0], lohi_to_ptr<void>(oldesp[-3], oldesp[-2]));
 #endif
     } break;
     case Opc::alloca: to = *eip++;
 #ifdef DEBUG
-      printf("%p: alloca %d\n", oldeip, to);
+      fmt::printf("%p: alloca %d\n", fmt::ptr(oldeip), to);
 #endif
       if (esp + to >= &stack[stack.size()]) {
         ptrdiff_t diff = esp - &stack[0];
@@ -398,20 +422,20 @@ void Program::run(int *eip) {
       }
       break;
     case Opc::read:
-      std::cout << "please input a number: ";
+      fmt::printf("please input a number: ");
       to = *eip++;
       std::cin >> esp[to];
       break;
     case Opc::write:
       to = *eip++;
-      std::cout << esp[to] << "\n";
+      fmt::printf("%d\n", esp[to]);
       break;
     case Opc::quit:
       is_quit = true;
-      std::cout << "quit the program\n";
+      fmt::printf("quit the program\n");
       break;
     default:
-      printf("unexpected opc %d\n", opc);
+      fmt::printf("unexpected opc %d\n", opc);
       abort();
       break;
     }
@@ -559,7 +583,7 @@ bool Compiler::handle_label(Program *prog, const std::string &line) {
   auto label_ptr = prog->get_textptr();
   labels[label] = label_ptr;
 #ifdef DEBUG
-  printf("add label %s, %p\n", label.str().c_str(), label_ptr);
+  fmt::printf("add label %s, %p\n", label.str(), fmt::ptr(label_ptr));
 #endif
   for (auto *ptr : backfill_labels[label]) {
     ptr[0] = ptr_lo(label_ptr);
@@ -780,7 +804,15 @@ bool Compiler::handle_write(Program *prog, const std::string &line) {
   return true;
 }
 
+void log_curir(int *eip, int *esp) {
+  const char *s = lohi_to_ptr<char>(eip[0], eip[1]);
+  fmt::printf("IR> %s\n", s, s);
+}
+
 std::unique_ptr<Program> Compiler::compile(std::istream &is) {
+#ifdef LOGIR
+  static std::vector<std::unique_ptr<char[]>> lines;
+#endif
   auto prog = std::make_unique<Program>();
   unsigned lineno = 0;
   while ((is.peek(), is.good())) {
@@ -789,9 +821,19 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
     std::string line;
     std::getline(is, line);
 
-#ifdef DEBUG
-    std::cout << line << "\n";
+#ifdef LOGIR
+    char *ir = new char[line.size() + 1];
+    strcpy(ir, line.c_str());
+    lines.push_back(std::unique_ptr<char[]>(ir));
+    prog->gen_inst(Opc::call, ptr_lo((void *)log_curir),
+                   ptr_hi((void *)log_curir), 2, ptr_lo(ir), ptr_hi(ir));
 #endif
+
+#ifdef DEBUG
+    fmt::printf("compile %s\n", line);
+#endif
+
+    if (line.find_first_not_of("\r\n\v\f\t ") == line.npos) { continue; }
 
     for (int i = (int)Stmt::begin; i < (int)Stmt::end; i++)
       if ((this->*handlers[(Stmt)i])(&*prog, line)) {
@@ -801,9 +843,7 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
 
     if (suc) continue;
 
-    if (line.find_first_not_of("\r\n\v\f\t ") == line.npos) { continue; }
-
-    std::cerr << "syntax error at line " << lineno << ": '" << line << "'\n";
+    fmt::printf("syntax error at line %d: %s\n", lineno, line);
   }
 
   if (prog->curf[0] == (int)Opc::alloca) { prog->curf[1] = stack_size + 1; }
@@ -812,15 +852,15 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
 
 int main(int argc, const char *argv[]) {
   if (argc <= 1) {
-    std::cerr << "usage: irsim [*.ir]\n";
+    fmt::printf("usage: irsim [*.ir]\n");
     return 0;
   }
 
-  std::clog << "load " << argv[1] << "\n";
+  fmt::printf("load %s\n", argv[1]);
   std::ifstream ifs(argv[1]);
 
   if (!ifs.good()) {
-    std::cerr << "'" << argv[1] << "' no such file\n";
+    fmt::printf("'%s' no such file\n", argv[1]);
     return 0;
   }
 
