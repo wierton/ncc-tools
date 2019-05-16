@@ -806,7 +806,7 @@ bool Compiler::handle_write(Program *prog, const std::string &line) {
 
 void log_curir(int *eip, int *esp) {
   const char *s = lohi_to_ptr<char>(eip[0], eip[1]);
-  fmt::printf("IR> %s\n", s, s);
+  fmt::printf("IR:%03d> %s\n", eip[2], s, s);
 }
 
 std::unique_ptr<Program> Compiler::compile(std::istream &is) {
@@ -826,7 +826,7 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
     strcpy(ir, line.c_str());
     lines.push_back(std::unique_ptr<char[]>(ir));
     prog->gen_inst(Opc::call, ptr_lo((void *)log_curir),
-                   ptr_hi((void *)log_curir), 2, ptr_lo(ir), ptr_hi(ir));
+                   ptr_hi((void *)log_curir), 3, ptr_lo(ir), ptr_hi(ir), lineno);
 #endif
 
 #ifdef DEBUG
