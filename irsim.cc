@@ -20,7 +20,7 @@
 namespace irsim {
 
 static std::map<Opc, std::string> opc_to_string{
-    {Opc::abort, "abort"},     {Opc::call, "call"},
+    {Opc::abort, "abort"},     {Opc::helper, "helper"},
     {Opc::lai, "lai"},         {Opc::la, "la"},
     {Opc::ld, "ld"},           {Opc::st, "st"},
     {Opc::inc_esp, "inc_esp"}, {Opc::li, "li"},
@@ -31,34 +31,21 @@ static std::map<Opc, std::string> opc_to_string{
     {Opc::le, "le"},           {Opc::eq, "eq"},
     {Opc::ge, "ge"},           {Opc::gt, "gt"},
     {Opc::ne, "ne"},           {Opc::alloca, "alloca"},
-    {Opc::ret, "ret"},         {Opc::read, "read"},
-    {Opc::write, "write"},     {Opc::quit, "quit"},
+    {Opc::call, "call"},       {Opc::ret, "ret"},
+    {Opc::read, "read"},       {Opc::write, "write"},
+    {Opc::quit, "quit"},
 };
-
 int Program::run(int *eip, uint64_t max) {
-  auto lo = 0, hi = 1, ret = 2, inc = 3;
+  std::vector<int *> frames;
+
+  auto ret = 2, inc = 3;
   int _start[] = {
-      (int)Opc::alloca,
-      4,
-      (int)Opc::li,
-      lo,
-      ptr_lo(&_start[19]),
-      (int)Opc::li,
-      hi,
-      ptr_hi(&_start[19]),
-      (int)Opc::li,
-      ret,
-      0,
-      (int)Opc::li,
-      inc,
-      inc,
-      (int)Opc::inc_esp,
-      inc,
-      (int)Opc::br,
-      ptr_lo(eip),
-      ptr_hi(eip),
-      (int)Opc::quit,
-      0,
+      (int)Opc::alloca, 4,
+      (int)Opc::li, ret, 0,
+      (int)Opc::li, inc, inc,
+      (int)Opc::inc_esp, inc,
+      (int)Opc::call, ptr_lo(eip), ptr_hi(eip),
+      (int)Opc::quit, 0,
   };
 
   eip = &_start[0];
@@ -75,11 +62,16 @@ int Program::run(int *eip, uint64_t max) {
 
 #ifdef DEBUG
     fmt::printf("stack:\n");
+	auto sp_value = (ptrdiff_t)(esp - &stack[0]);
     constexpr int step = 6;
     for (auto i = 0u; i < stack.size(); i += step) {
-      fmt::printf("%02d: ", i);
+      fmt::printf("%02d:", i);
       for (auto j = i; j < i + step && j < stack.size(); j++) {
-        fmt::printf("%08x ", stack[j]);
+		if (j == sp_value) {
+		  fmt::printf(">%08x<", stack[j]);
+		} else {
+		  fmt::printf(" %08x ", stack[j]);
+		}
       }
       fmt::printf("\n");
     }
@@ -87,7 +79,7 @@ int Program::run(int *eip, uint64_t max) {
 
     switch ((Opc)opc) {
     case Opc::abort: fmt::printf("unexpected instruction\n"); break;
-    case Opc::call: {
+    case Opc::helper: {
       int ptrlo = *eip++;
       int ptrhi = *eip++;
       int nr_args = *eip++;
@@ -290,19 +282,24 @@ int Program::run(int *eip, uint64_t max) {
 #endif
       esp += constant;
       break;
+	case Opc::call: {
+      int ptrlo = *eip++;
+      int ptrhi = *eip++;
+      int *target = lohi_to_ptr<int>(ptrlo, ptrhi);
+	  frames.push_back(eip);
+	  eip = target;
+	} break;
     case Opc::ret: {
-#ifdef DEBUG
-      int *oldesp = esp;
-#endif
       int retval = esp[*eip++];
       to = esp[-1];
-      eip = lohi_to_ptr<int>(esp[-3], esp[-2]);
       esp -= esp[0];
       esp[to] = retval;
+	  assert (frames.size());
+	  eip = frames.back();
+	  frames.pop_back();
 #ifdef DEBUG
       fmt::printf("%p: ret %d, %d, dec %d, br %p\n", fmt::ptr(oldeip),
-                  retval, to, esp[0],
-                  lohi_to_ptr<void>(oldesp[-3], oldesp[-2]));
+                  retval, to, esp[0], fmt::ptr(eip));
 #endif
     } break;
     case Opc::alloca: to = *eip++;
@@ -608,21 +605,13 @@ bool Compiler::handle_call(Program *prog, const std::string &line) {
   auto to = *it++;
   auto f = *it++;
 
-  auto lo = newArg();
-  auto hi = newArg();
   auto ret = newArg();
   auto inc = newArg();
 
-  auto *la_lo = prog->gen_inst(Opc::li, lo, 0);
-  auto *la_hi = prog->gen_inst(Opc::li, hi, 0);
   prog->gen_inst(Opc::li, ret, getVar(to));
   prog->gen_inst(Opc::li, inc, inc);
   prog->gen_inst(Opc::inc_esp, inc);
-  prog->gen_br(funcs[f]);
-
-  auto *text_ptr = prog->get_textptr();
-  la_lo[2] = ptr_lo(text_ptr);
-  la_hi[2] = ptr_hi(text_ptr);
+  prog->gen_call(funcs[f]);
 
   return true;
 }
@@ -687,7 +676,7 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
     char *ir = new char[line.size() + 1];
     strcpy(ir, line.c_str());
     lines.push_back(std::unique_ptr<char[]>(ir));
-    prog->gen_inst(Opc::call, ptr_lo((void *)log_curir),
+    prog->gen_inst(Opc::helper, ptr_lo((void *)log_curir),
                    ptr_hi((void *)log_curir), 3, ptr_lo(ir),
                    ptr_hi(ir), lineno);
 #endif

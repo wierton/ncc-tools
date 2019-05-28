@@ -1,6 +1,12 @@
 #ifndef IRSIM_H
 #define IRSIM_H
 
+#include <memory>
+#include <string>
+#include <map>
+#include <vector>
+#include <utility>
+#include <iostream>
 #include <limits.h>
 
 namespace irsim {
@@ -48,7 +54,7 @@ enum class Stmt {
 enum class Opc {
   abort, // as 0
   inst_begin,
-  call, // native call, not function call
+  helper, // native call
   lai,
   la,
   ld,
@@ -69,6 +75,7 @@ enum class Opc {
   gt,
   ne,
   alloca,
+  call,
   ret,
   read,
   write,
@@ -201,6 +208,10 @@ public:
     return oldptr;
   }
 
+  int *gen_call(int *target) {
+    return gen_inst(Opc::call, ptr_lo(target), ptr_hi(target));
+  }
+
   int *gen_br(int *target) {
     return gen_inst(Opc::br, ptr_lo(target), ptr_hi(target));
   }
@@ -257,7 +268,7 @@ public:
 
   void clear_env() {
     stack_size = 1;
-    args_size = -4;
+    args_size = -2;
     labels.clear();
   }
 
