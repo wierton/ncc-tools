@@ -1,11 +1,16 @@
 OBJ_DIR := build
-SRCS := irsim.cc
+ANTLR_SRCS := IRBaseVisitor.cpp IRLexer.cpp IRParser.cpp IRVisitor.cpp
+ANTLR_SRCS := $(addprefix $(OBJ_DIR)/, $(ANTLR_SRCS))
+SRCS := irsim.cc main.cc
 SRCS += $(shell find libfmt/ -name "*.cc")
 OBJS := $(patsubst %.cc,$(OBJ_DIR)/%.o,$(SRCS))
 BIN := $(OBJ_DIR)/irsim
 
 .DEFAULT_GOAL := $(BIN)
 CXXFLAGS := -Iinclude -std=c++17 -O0 -ggdb3 -Wall
+
+$(ANTLR_SRCS): IR.g4
+	antlr4 -runtime -Dlanguage=Cpp -no-listener -visitor -o $(OBJ_DIR) $<
 
 $(BIN): $(OBJS)
 	@echo "+ LNK $@"
