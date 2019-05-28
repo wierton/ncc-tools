@@ -112,7 +112,7 @@ int Program::run(int *eip, uint64_t max) {
       fmt::printf("%p: ld %d, (%d)=%d\n", fmt::ptr(oldeip), to, from,
                   esp[from]);
 #endif
-      if ((unsigned)esp[from] > stack.size()) {
+      if ((unsigned)esp[from] + sizeof(int) >= sizeof(int) * stack.size()) {
         exception.reason = Exception::LOAD;
         return -1;
       }
@@ -121,7 +121,7 @@ int Program::run(int *eip, uint64_t max) {
     case Opc::st: {
       to = *eip++;
       from = *eip++;
-      if ((unsigned)esp[to] >= stack.size()) {
+      if ((unsigned)esp[to] + sizeof(int) >= sizeof(int) * stack.size()) {
         exception.reason = Exception::STORE;
         return -1;
       }

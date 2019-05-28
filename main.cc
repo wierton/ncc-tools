@@ -21,6 +21,7 @@ int main(int argc, const char *argv[]) {
   using namespace irsim;
   Compiler compiler;
   auto prog = compiler.compile(ifs);
-  prog->run(compiler.getFunction("main"));
+  auto code = prog->run(compiler.getFunction("main"));
+  printf("ret with %d, reason %d\n", code, prog->exception.reason);
   return 0;
 }
