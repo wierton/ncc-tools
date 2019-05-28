@@ -269,6 +269,7 @@ public:
   void clear_env() {
     stack_size = 1;
     args_size = -2;
+	vars.clear();
     labels.clear();
   }
 

@@ -16,6 +16,7 @@
 
 // #define LOGIR
 // #define DEBUG
+#define SAFE_POINTER
 
 namespace irsim {
 
@@ -35,6 +36,54 @@ static std::map<Opc, std::string> opc_to_string{
     {Opc::read, "read"},       {Opc::write, "write"},
     {Opc::quit, "quit"},
 };
+
+#ifdef SAFE_POINTER
+template <class T>
+struct SafePointer {
+  T *ptr;
+  size_t left;
+  size_t right;
+
+  void check(int i) const {
+    assert(i != INT_MIN);
+    if (i < 0) {
+      assert((unsigned)-i <= left);
+	} else {
+      assert((unsigned)i < right);
+	}
+  }
+
+public:
+  SafePointer(T *ptr, size_t right, size_t left = 0)
+      : ptr(ptr), left(left), right(right) {}
+
+  operator T *const() { return ptr; }
+
+  T &operator[](int i) const {
+	check(i);
+    return ptr[i];
+  }
+
+  SafePointer &operator+=(int inc) {
+	check(inc);
+    ptr += inc;
+    left += inc;
+    right -= inc;
+    return *this;
+  }
+
+  SafePointer &operator-=(int inc) {
+    assert(inc != INT_MIN);
+    return this->operator+=(-inc);
+  }
+};
+#else
+template <class T>
+T *SafePointer(T *ptr, size_t right, size_t left=0) {
+  return ptr;
+}
+#endif
+
 int Program::run(int *eip, uint64_t max) {
   std::vector<int *> frames;
 
@@ -49,7 +98,7 @@ int Program::run(int *eip, uint64_t max) {
   };
 
   eip = &_start[0];
-  esp = &stack[0];
+  auto esp = SafePointer<int>(&stack[0], stack.size());
 
   while (true) {
 #ifdef DEBUG
@@ -147,10 +196,10 @@ int Program::run(int *eip, uint64_t max) {
        * behavior */
       to = *eip++;
       lhs = *eip++;
-      esp[to] = esp[lhs];
 #ifdef DEBUG
       fmt::printf("%p: mov %d %d\n", fmt::ptr(oldeip), to, lhs);
 #endif
+      esp[to] = esp[lhs];
       break;
     case Opc::add:
       to = *eip++;
@@ -312,7 +361,7 @@ int Program::run(int *eip, uint64_t max) {
         auto newStackSize = 2 * (stack.size() + to);
         if (newStackSize < 16 * 1024 * 1024) {
           stack.resize(newStackSize);
-          esp = &stack[diff];
+          esp = SafePointer<int>(&stack[diff], newStackSize - diff, diff);
         } else {
           exception.reason = Exception::MAX_MEMORY;
           return -1;
@@ -702,7 +751,7 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
   }
 
   if (prog->curf[0] == (int)Opc::alloca) {
-    prog->curf[1] = stack_size + 1;
+    prog->curf[1] = stack_size + 2;
   }
   return prog;
 }
