@@ -251,9 +251,11 @@ class Compiler {
   std::map<std::string, int *> funcs;
   std::map<std::string, int *> labels;
 
+  std::map<int, bool> temps;
+
   std::map<std::string, std::vector<int *>> backfill_labels;
 
-  std::vector<int*> backfill_args;
+  std::vector<int *> backfill_args;
 
   static std::map<Stmt,
                   bool (Compiler::*)(Program *, const std::string &)>
@@ -306,9 +308,21 @@ public:
     return it->second;
   }
 
+  void clearTemps() {
+    for (auto &kvpair : temps) kvpair.second = false;
+  }
+
   int newTemp() {
-    stack_size++;
-    return stack_size - 1;
+    for (auto &kvpair : temps) {
+      if (!kvpair.second) {
+        kvpair.second = true;
+        return kvpair.first;
+      }
+    }
+
+    auto tmp = stack_size++;
+    temps[tmp] = true;
+    return tmp;
   }
 
   int newArg() {

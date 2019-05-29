@@ -16,7 +16,7 @@
 
 // #define LOGIR
 // #define DEBUG
-#define SAFE_POINTER
+// #define SAFE_POINTER
 
 namespace irsim {
 
@@ -767,11 +767,14 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
       continue;
     }
 
-    for (int i = (int)Stmt::begin; i < (int)Stmt::end; i++)
+	clearTemps();
+    for (int i = (int)Stmt::begin; i < (int)Stmt::end; i++) {
       if ((this->*handlers[(Stmt)i])(&*prog, line)) {
+		if (i == (int)Stmt::func) temps.clear();;
         suc = true;
         break;
       }
+	}
 
     if (suc) continue;
 
