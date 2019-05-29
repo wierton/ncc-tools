@@ -21,8 +21,8 @@ int main(int argc, const char *argv[]) {
   using namespace irsim;
   Compiler compiler;
   auto prog = compiler.compile(ifs);
-  prog->setInstsLimit(1000);
-  prog->setMemoryLimit(1000);
+  prog->setInstsLimit(10 * 10000 * 10000);
+  prog->setMemoryLimit(128 * 1024 * 1024);
   auto code = prog->run(compiler.getFunction("main"));
   printf("ret with %d, reason %d\n", code, (int)prog->exception);
   return 0;

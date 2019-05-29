@@ -86,6 +86,7 @@ T *SafePointer(T *ptr, size_t right, size_t left=0) {
 
 int Program::run(int *eip) {
   std::vector<int *> frames;
+  std::vector<int> args;
 
   auto ret = 2, inc = 3;
   int _start[] = {
@@ -151,6 +152,21 @@ int Program::run(int *eip) {
       fmt::printf("%p: helper %p\n", fmt::ptr(oldeip), (void *)f);
 #endif
     } break;
+    case Opc::arg:
+      to = *eip++;
+      args.push_back(esp[to]);
+#ifdef DEBUG
+      fmt::printf("%p: arg %d\n", fmt::ptr(oldeip), to);
+#endif
+      break;
+    case Opc::param:
+      to = *eip++;
+      esp[to] = args.back();
+      args.pop_back();
+#ifdef DEBUG
+      fmt::printf("%p: param %d\n", fmt::ptr(oldeip), to);
+#endif
+      break;
     case Opc::lai: {
       to = *eip++;
       from = *eip++;
@@ -661,8 +677,9 @@ bool Compiler::handle_arg(Program *prog, const std::string &line) {
   if (it == std::sregex_token_iterator()) return false;
 
   auto tmp = primary_exp(prog, *it++);
-  auto *ptr = prog->gen_inst(Opc::mov, 0, tmp);
-  backfill_args.push_back(ptr);
+  prog->gen_inst(Opc::arg, tmp);
+  // auto *ptr = prog->gen_inst(Opc::mov, 0, tmp);
+  // backfill_args.push_back(ptr);
   return true;
 }
 
@@ -677,10 +694,12 @@ bool Compiler::handle_call(Program *prog, const std::string &line) {
   auto f = *it++;
 
   /* backfill args */
+#if 0
   for (auto *arg : backfill_args) {
 	assert (arg[0] == (int)Opc::mov);
 	arg[1] = newArg();
   }
+#endif
 
   backfill_args.clear();
 
@@ -699,7 +718,7 @@ bool Compiler::handle_param(Program *prog, const std::string &line) {
   auto it =
       std::sregex_token_iterator(line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) return false;
-  getParam(*it++);
+  prog->gen_inst(Opc::param, getVar(*it++));
   return true;
 }
 

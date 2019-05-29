@@ -68,6 +68,8 @@ enum class Opc {
   abort, // as 0
   inst_begin,
   helper, // native call
+  arg,
+  param,
   lai,
   la,
   ld,
