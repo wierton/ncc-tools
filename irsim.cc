@@ -84,7 +84,7 @@ T *SafePointer(T *ptr, size_t right, size_t left=0) {
 }
 #endif
 
-int Program::run(int *eip, uint64_t max) {
+int Program::run(int *eip) {
   std::vector<int *> frames;
 
   auto ret = 2, inc = 3;
@@ -104,6 +104,11 @@ int Program::run(int *eip, uint64_t max) {
 #ifdef DEBUG
     auto oldeip = eip;
 #endif
+	if (eip == nullptr) {
+	  exception = Exception::IF;
+	  return -1;
+	}
+
     int opc = *eip++;
     int from, to;
     int lhs, rhs;
@@ -127,7 +132,13 @@ int Program::run(int *eip, uint64_t max) {
 #endif
 
     switch ((Opc)opc) {
-    case Opc::abort: fmt::printf("unexpected instruction\n"); break;
+    case Opc::abort:
+	  fmt::printf("unexpected instruction\n");
+	  exception = Exception::ABORT;
+#ifdef DEBUG
+      fmt::printf("%p: abort\n", fmt::ptr(oldeip));
+#endif
+	  return -1;
     case Opc::helper: {
       int ptrlo = *eip++;
       int ptrhi = *eip++;
@@ -136,6 +147,9 @@ int Program::run(int *eip, uint64_t max) {
       F *f = lohi_to_ptr<F>(ptrlo, ptrhi);
       f(eip, esp);
       eip += nr_args;
+#ifdef DEBUG
+      fmt::printf("%p: helper %p\n", fmt::ptr(oldeip), (void *)f);
+#endif
     } break;
     case Opc::lai: {
       to = *eip++;
@@ -157,12 +171,13 @@ int Program::run(int *eip, uint64_t max) {
     case Opc::ld: {
       to = *eip++;
       from = *eip++;
+	  /* esp[to] = stack[esp[from]] */
 #ifdef DEBUG
       fmt::printf("%p: ld %d, (%d)=%d\n", fmt::ptr(oldeip), to, from,
                   esp[from]);
 #endif
       if ((unsigned)esp[from] + sizeof(int) >= sizeof(int) * stack.size()) {
-        exception.reason = Exception::LOAD;
+        exception = Exception::LOAD;
         return -1;
       }
       memcpy(&esp[to], (char *)&stack[0] + esp[from], sizeof(int));
@@ -170,8 +185,9 @@ int Program::run(int *eip, uint64_t max) {
     case Opc::st: {
       to = *eip++;
       from = *eip++;
+	  /* stack[esp[to]] = esp[from] */
       if ((unsigned)esp[to] + sizeof(int) >= sizeof(int) * stack.size()) {
-        exception.reason = Exception::STORE;
+        exception = Exception::STORE;
         return -1;
       }
       memcpy((char *)&stack[0] + esp[to], &esp[from], sizeof(int));
@@ -236,7 +252,7 @@ int Program::run(int *eip, uint64_t max) {
       lhs = *eip++;
       rhs = *eip++;
       if (esp[rhs] == 0) {
-        exception.reason = Exception::DIV_ZERO;
+        exception = Exception::DIV_ZERO;
         return -1;
       } else {
         esp[to] = esp[lhs] / esp[rhs];
@@ -337,58 +353,61 @@ int Program::run(int *eip, uint64_t max) {
       int *target = lohi_to_ptr<int>(ptrlo, ptrhi);
 	  frames.push_back(eip);
 	  eip = target;
+#ifdef DEBUG
+      fmt::printf("%p: call %p\n", fmt::ptr(oldeip), fmt::ptr(eip));
+#endif
 	} break;
     case Opc::ret: {
-      int retval = esp[*eip++];
-      to = esp[-1];
       esp -= esp[0];
-      esp[to] = retval;
 	  assert (frames.size());
 	  eip = frames.back();
 	  frames.pop_back();
 #ifdef DEBUG
-      fmt::printf("%p: ret %d, %d, dec %d, br %p\n", fmt::ptr(oldeip),
-                  retval, to, esp[0], fmt::ptr(eip));
+      fmt::printf("%p: ret %p\n", fmt::ptr(oldeip), fmt::ptr(eip));
 #endif
     } break;
-    case Opc::alloca: to = *eip++;
+	case Opc::alloca: {
+	  int size = *eip++;
 #ifdef DEBUG
-      fmt::printf("%p: alloca %d\n", fmt::ptr(oldeip), to);
+	  fmt::printf("%p: alloca %d\n", fmt::ptr(oldeip), size);
 #endif
-      if (esp + to >= &stack[stack.size()]) {
-        ptrdiff_t diff = esp - &stack[0];
-        assert(diff >= 0);
-        auto newStackSize = 2 * (stack.size() + to);
-        if (newStackSize < 16 * 1024 * 1024) {
-          stack.resize(newStackSize);
-          esp = SafePointer<int>(&stack[diff], newStackSize - diff, diff);
-        } else {
-          exception.reason = Exception::MAX_MEMORY;
-          return -1;
-        }
-      }
-      break;
+	  ptrdiff_t base = esp - &stack[0];
+	  assert(base >= 0 && (unsigned)base <= stack.size());
+	  unsigned newSize = base + size;
+	  if (newSize >= stack.size()) {
+		if (newSize < memory_limit) {
+		  auto ns = std::min(2 * (newSize + 1), memory_limit);
+		  stack.resize(ns);
+		  esp = SafePointer<int>(&stack[base], ns - base, base);
+		} else {
+		  exception = Exception::OOM;
+		  return -1;
+		}
+	  }
+	} break;
     case Opc::read:
-      fmt::printf("please input a number: ");
       to = *eip++;
       esp[to] = io.read();
       break;
     case Opc::write:
       to = *eip++;
       io.write(esp[to]);
+#ifdef DEBUG
+	  fmt::printf("%p: write %d\n", fmt::ptr(oldeip), to);
+#endif
       break;
     case Opc::quit: return 0;
     case Opc::inst_begin:
       inst_counter++;
-      if (inst_counter >= max) {
-        exception.reason = Exception::MAX_INSTS;
+      if (inst_counter >= insts_limit) {
+        exception = Exception::TIMEOUT;
         return -1;
       }
       break;
     default:
       fmt::printf("unexpected opc %d\n", opc);
-      abort();
-      break;
+	  exception = Exception::INVOP;
+	  return -1;
     }
   }
   return 0;
@@ -617,7 +636,8 @@ bool Compiler::handle_ret(Program *prog, const std::string &line) {
   if (it == std::sregex_token_iterator()) return false;
 
   auto x = primary_exp(prog, *it++);
-  prog->gen_inst(Opc::ret, x);
+  prog->gen_inst(Opc::mov, getRet(), x);
+  prog->gen_inst(Opc::ret);
   return true;
 }
 
@@ -640,8 +660,9 @@ bool Compiler::handle_arg(Program *prog, const std::string &line) {
       std::sregex_token_iterator(line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) return false;
 
-  auto arg = newArg();
-  primary_exp(prog, *it++, arg);
+  auto tmp = primary_exp(prog, *it++);
+  auto *ptr = prog->gen_inst(Opc::mov, 0, tmp);
+  backfill_args.push_back(ptr);
   return true;
 }
 
@@ -651,17 +672,25 @@ bool Compiler::handle_call(Program *prog, const std::string &line) {
   auto it =
       std::sregex_token_iterator(line.begin(), line.end(), pat, m2);
   if (it == std::sregex_token_iterator()) return false;
+
   auto to = *it++;
   auto f = *it++;
+
+  /* backfill args */
+  for (auto *arg : backfill_args) {
+	assert (arg[0] == (int)Opc::mov);
+	arg[1] = newArg();
+  }
+
+  backfill_args.clear();
 
   auto ret = newArg();
   auto inc = newArg();
 
-  prog->gen_inst(Opc::li, ret, getVar(to));
   prog->gen_inst(Opc::li, inc, inc);
   prog->gen_inst(Opc::inc_esp, inc);
   prog->gen_call(funcs[f]);
-
+  prog->gen_inst(Opc::mov, getVar(to), ret);
   return true;
 }
 
@@ -746,13 +775,14 @@ std::unique_ptr<Program> Compiler::compile(std::istream &is) {
 
     if (suc) continue;
 
-    fmt::printf("syntax error at line %d: '%s'\n", lineno, line);
-    return std::unique_ptr<Program>();
+    fmt::printf("[IGNORED] syntax error at line %d: '%s'\n", lineno, line);
+	/* IGNORED and continue */
   }
 
   if (prog->curf[0] == (int)Opc::alloca) {
     prog->curf[1] = stack_size + 2;
   }
+  prog->gen_inst(Opc::abort);
   return prog;
 }
 

@@ -22,6 +22,6 @@ int main(int argc, const char *argv[]) {
   Compiler compiler;
   auto prog = compiler.compile(ifs);
   auto code = prog->run(compiler.getFunction("main"));
-  printf("ret with %d, reason %d\n", code, prog->exception.reason);
+  printf("ret with %d, reason %d\n", code, (int)prog->exception);
   return 0;
 }

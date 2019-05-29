@@ -1,13 +1,15 @@
 #ifndef IRSIM_H
 #define IRSIM_H
 
-#include <memory>
-#include <string>
-#include <map>
-#include <vector>
-#include <utility>
 #include <iostream>
 #include <limits.h>
+#include <map>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "fmt/printf.h"
 
 namespace irsim {
 
@@ -102,6 +104,7 @@ public:
       return ret;
     } else {
       int ret;
+      fmt::printf("please input a number: ");
       (*is) >> ret;
       return ret;
     }
@@ -137,6 +140,9 @@ public:
 class Program {
   ProgramIO io;
 
+  unsigned memory_limit;
+  unsigned insts_limit;
+
   unsigned inst_counter;
 
   std::vector<std::unique_ptr<TransitionBlock>> codes;
@@ -153,7 +159,9 @@ class Program {
   friend class Compiler;
 
 public:
-  Program() : io(std::cin, std::cout) {
+  Program()
+      : io(std::cin, std::cout), memory_limit(4 * 1024 * 1024),
+        insts_limit(-1u) {
     inst_counter = 0;
     curblk = new TransitionBlock;
     codes.push_back(std::unique_ptr<TransitionBlock>(curblk));
@@ -162,8 +170,19 @@ public:
     curf = gen_inst(Opc::quit, Opc::quit);
   }
 
-  struct Exception {
-    enum { LOAD, STORE, DIV_ZERO, MAX_INSTS, MAX_MEMORY } reason;
+  void setMemoryLimit(unsigned lim) { memory_limit = lim; }
+
+  void setInstsLimit(unsigned lim) { insts_limit = lim; }
+
+  enum class Exception {
+    IF,
+    LOAD,
+    STORE,
+    DIV_ZERO,
+    TIMEOUT,
+    OOM,
+    ABORT,
+    INVOP,
   } exception;
 
   unsigned getInstCounter() const { return inst_counter; }
@@ -221,7 +240,7 @@ public:
                     ptr_hi(target));
   }
 
-  int run(int *eip, uint64_t max = -1u);
+  int run(int *eip);
 };
 
 class Compiler {
@@ -233,6 +252,8 @@ class Compiler {
   std::map<std::string, int *> labels;
 
   std::map<std::string, std::vector<int *>> backfill_labels;
+
+  std::vector<int*> backfill_args;
 
   static std::map<Stmt,
                   bool (Compiler::*)(Program *, const std::string &)>
@@ -269,7 +290,7 @@ public:
   void clear_env() {
     stack_size = 1;
     args_size = -2;
-	vars.clear();
+    vars.clear();
     labels.clear();
   }
 
@@ -294,6 +315,8 @@ public:
     stack_size++;
     return stack_size - 1;
   }
+
+  int getRet() { return -1; }
 
   int getParam(const std::string &name) {
     auto it = vars.find(name);
