@@ -29,6 +29,17 @@ T *lohi_to_ptr(uint32_t lo, uint32_t hi) {
   return reinterpret_cast<T *>(ptr);
 }
 
+enum class Exception {
+  IF,
+  LOAD,
+  STORE,
+  DIV_ZERO,
+  TIMEOUT,
+  OOM,
+  ABORT,
+  INVOP,
+};
+
 enum class Stmt {
   begin,
   label = Stmt::begin,
@@ -157,8 +168,11 @@ class Program {
   int *curf;
 
   friend class Compiler;
+public:
+  Exception exception;
 
 public:
+
   Program()
       : io(std::cin, std::cout), memory_limit(4 * 1024 * 1024),
         insts_limit(-1u) {
@@ -173,17 +187,6 @@ public:
   void setMemoryLimit(unsigned lim) { memory_limit = lim; }
 
   void setInstsLimit(unsigned lim) { insts_limit = lim; }
-
-  enum class Exception {
-    IF,
-    LOAD,
-    STORE,
-    DIV_ZERO,
-    TIMEOUT,
-    OOM,
-    ABORT,
-    INVOP,
-  } exception;
 
   unsigned getInstCounter() const { return inst_counter; }
 
@@ -342,6 +345,21 @@ public:
 
   std::unique_ptr<Program> compile(std::istream &is);
 };
+
+inline std::ostream &operator<<(std::ostream &os,
+                                Exception exception) {
+  switch (exception) {
+  case Exception::IF: os << "IF"; break;
+  case Exception::LOAD: os << "LOAD"; break;
+  case Exception::STORE: os << "STORE"; break;
+  case Exception::DIV_ZERO: os << "DIV_ZERO"; break;
+  case Exception::TIMEOUT: os << "TIMEOUT"; break;
+  case Exception::OOM: os << "OOM"; break;
+  case Exception::ABORT: os << "ABORT"; break;
+  case Exception::INVOP: os << "INVOP"; break;
+  };
+  return os;
+}
 
 } // namespace irsim
 
