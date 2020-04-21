@@ -15,7 +15,8 @@ namespace irsim {
 
 template <class T>
 int ptr_hi(const T *ptr) {
-  return static_cast<int>(reinterpret_cast<uintptr_t>(ptr) >> 32);
+  return static_cast<int>(
+      reinterpret_cast<uintptr_t>(ptr) >> 32);
 }
 
 template <class T>
@@ -29,38 +30,17 @@ T *lohi_to_ptr(uint32_t lo, uint32_t hi) {
   return reinterpret_cast<T *>(ptr);
 }
 
+/* clang-format off */
 enum class Exception {
-  IF,
-  LOAD,
-  STORE,
-  DIV_ZERO,
-  TIMEOUT,
-  OOM,
-  ABORT,
-  INVOP,
+  IF, LOAD, STORE, DIV_ZERO, TIMEOUT, OOM, ABORT, INVOP,
 };
 
 enum class Stmt {
   begin,
   label = Stmt::begin,
-  func,
-  assign,
-  add,
-  sub,
-  mul,
-  div,
-  takeaddr,
-  deref,
-  deref_assign,
-  goto_,
-  branch,
-  ret,
-  dec,
-  arg,
-  call,
-  param,
-  read,
-  write,
+  func, assign, add, sub, mul, div, takeaddr, deref,
+  deref_assign, goto_, branch, ret, dec, arg, call,
+  param, read, write,
   end,
 };
 
@@ -68,34 +48,12 @@ enum class Opc {
   abort, // as 0
   inst_begin,
   helper, // native call
-  arg,
-  param,
-  lai,
-  la,
-  ld,
-  st,
-  inc_esp,
-  li,
-  mov,
-  add,
-  sub,
-  mul,
-  div,
-  br,
-  cond_br,
-  lt,
-  le,
-  eq,
-  ge,
-  gt,
-  ne,
-  alloca,
-  call,
-  ret,
-  read,
-  write,
+  arg, param, lai, la, ld, st, inc_esp, li, mov, add, sub,
+  mul, div, br, cond_br, lt, le, eq, ge, gt, ne, alloca,
+  call, ret, read, write,
   quit,
 };
+/* clang-format on */
 
 using TransitionBlock = std::array<int, 4 * 1024>;
 
@@ -107,7 +65,8 @@ class ProgramInput {
 
 public:
   ProgramInput(std::istream &is) : is(&is), vec(nullptr) {}
-  ProgramInput(std::vector<int> &vec) : is(nullptr), vec(&vec) {}
+  ProgramInput(std::vector<int> &vec)
+      : is(nullptr), vec(&vec) {}
   ProgramInput(const ProgramInput &that) = default;
 
   int read() {
@@ -132,7 +91,8 @@ class ProgramOutput {
 
 public:
   ProgramOutput(std::ostream &os) : os(&os), vec(nullptr) {}
-  ProgramOutput(std::vector<int> &vec) : os(nullptr), vec(&vec) {}
+  ProgramOutput(std::vector<int> &vec)
+      : os(nullptr), vec(&vec) {}
   ProgramOutput(const ProgramOutput &that) = default;
 
   void write(int v) {
@@ -144,7 +104,8 @@ public:
   }
 };
 
-class ProgramIO : public ProgramInput, public ProgramOutput {
+class ProgramIO : public ProgramInput,
+                  public ProgramOutput {
 public:
   ProgramIO(ProgramInput in, ProgramOutput out)
       : ProgramInput(in), ProgramOutput(out) {}
@@ -170,17 +131,18 @@ class Program {
   int *curf;
 
   friend class Compiler;
+
 public:
   Exception exception;
 
 public:
-
   Program()
-      : io(std::cin, std::cout), memory_limit(4 * 1024 * 1024),
-        insts_limit(-1u) {
+      : io(std::cin, std::cout),
+        memory_limit(4 * 1024 * 1024), insts_limit(-1u) {
     inst_counter = 0;
     curblk = new TransitionBlock;
-    codes.push_back(std::unique_ptr<TransitionBlock>(curblk));
+    codes.push_back(
+        std::unique_ptr<TransitionBlock>(curblk));
     textptr = &curblk->at(0);
 
     curf = gen_inst(Opc::quit, Opc::quit);
@@ -204,7 +166,8 @@ public:
   void check_eof(unsigned N) {
     if (textptr + N + 2 >= &(*curblk)[curblk->size()]) {
       curblk = new TransitionBlock;
-      codes.push_back(std::unique_ptr<TransitionBlock>(curblk));
+      codes.push_back(
+          std::unique_ptr<TransitionBlock>(curblk));
       *textptr++ = (int)Opc::br;
       *textptr++ = ptr_lo(&(curblk->at(0)));
       *textptr++ = ptr_hi(&(curblk->at(0)));
@@ -218,13 +181,16 @@ public:
     check_eof(N + 1);
     auto oldptr = textptr;
     *textptr++ = (int)opc;
-    for (int v : std::array<int, N>{static_cast<int>(args)...}) {
+    for (int v :
+        std::array<int, N>{static_cast<int>(args)...}) {
       *textptr++ = v;
     }
 
 #ifdef DEBUG
-    fmt::printf("  %p: %s", fmt::ptr(oldptr), opc_to_string[opc]);
-    for (int v : std::array<int, N>{static_cast<int>(args)...}) {
+    fmt::printf(
+        "  %p: %s", fmt::ptr(oldptr), opc_to_string[opc]);
+    for (int v :
+        std::array<int, N>{static_cast<int>(args)...}) {
       fmt::printf("0x%x ", v);
     }
     fmt::printf("\n");
@@ -233,16 +199,18 @@ public:
   }
 
   int *gen_call(int *target) {
-    return gen_inst(Opc::call, ptr_lo(target), ptr_hi(target));
+    return gen_inst(
+        Opc::call, ptr_lo(target), ptr_hi(target));
   }
 
   int *gen_br(int *target) {
-    return gen_inst(Opc::br, ptr_lo(target), ptr_hi(target));
+    return gen_inst(
+        Opc::br, ptr_lo(target), ptr_hi(target));
   }
 
   int *gen_cond_br(int cond, int *target) {
-    return gen_inst(Opc::cond_br, cond, ptr_lo(target),
-                    ptr_hi(target));
+    return gen_inst(
+        Opc::cond_br, cond, ptr_lo(target), ptr_hi(target));
   }
 
   int run(int *eip);
@@ -263,16 +231,16 @@ class Compiler {
   std::vector<int *> backfill_args;
 
   static std::map<Stmt,
-                  bool (Compiler::*)(Program *, const std::string &)>
+      bool (Compiler::*)(Program *, const std::string &)>
       handlers;
 
-  static int m1[];
-  static int m2[];
-  static int m3[];
-  static int m4[];
+  static constexpr int m1[] = {1};
+  static constexpr int m2[] = {1, 2};
+  static constexpr int m3[] = {1, 2, 3};
+  static constexpr int m4[] = {1, 2, 3, 4};
 
   int primary_exp(Program *prog, const std::string &tok,
-                  int to = INT_MAX);
+      int to = INT_MAX);
 
   bool handle_label(Program *, const std::string &line);
   bool handle_func(Program *, const std::string &line);
@@ -280,7 +248,8 @@ class Compiler {
   bool handle_arith(Program *, const std::string &line);
   bool handle_takeaddr(Program *, const std::string &line);
   bool handle_deref(Program *, const std::string &line);
-  bool handle_deref_assign(Program *, const std::string &line);
+  bool handle_deref_assign(
+      Program *, const std::string &line);
   bool handle_goto_(Program *, const std::string &line);
   bool handle_branch(Program *, const std::string &line);
   bool handle_ret(Program *, const std::string &line);
@@ -301,13 +270,15 @@ public:
     labels.clear();
   }
 
-  int *getFunction(const std::string &fname) { return funcs[fname]; }
+  int *getFunction(const std::string &fname) {
+    return funcs[fname];
+  }
 
   int getVar(const std::string &name, unsigned size = 1) {
     auto it = vars.find(name);
     if (it == vars.end()) {
-      std::tie(it, std::ignore) =
-          vars.insert(std::pair<std::string, int>{name, stack_size});
+      std::tie(it, std::ignore) = vars.insert(
+          std::pair<std::string, int>{name, stack_size});
       stack_size += size;
     }
     return it->second;
@@ -340,16 +311,16 @@ public:
   int getParam(const std::string &name) {
     auto it = vars.find(name);
     if (it == vars.end())
-      std::tie(it, std::ignore) =
-          vars.insert(std::pair<std::string, int>{name, args_size--});
+      std::tie(it, std::ignore) = vars.insert(
+          std::pair<std::string, int>{name, args_size--});
     return it->second;
   }
 
   std::unique_ptr<Program> compile(std::istream &is);
 };
 
-inline std::ostream &operator<<(std::ostream &os,
-                                Exception exception) {
+inline std::ostream &operator<<(
+    std::ostream &os, Exception exception) {
   switch (exception) {
   case Exception::IF: os << "IF"; break;
   case Exception::LOAD: os << "LOAD"; break;
