@@ -11,7 +11,6 @@
 #include <tuple>
 #include <vector>
 
-#include "fmt/printf.h"
 #include "irsim.h"
 
 // #define LOGIR
@@ -59,7 +58,7 @@ public:
   SafePointer(T *ptr, size_t right, size_t left = 0)
       : ptr(ptr), left(left), right(right) {}
 
-  operator T *const() { return ptr; }
+  operator T * const() { return ptr; }
 
   T &operator[](int i) const {
     check(i);
@@ -120,29 +119,29 @@ int Program::run(int *eip) {
     int constant;
 
 #ifdef DEBUG
-    fmt::printf("stack:\n");
+    printf("stack:\n");
     auto sp_value = (ptrdiff_t)(esp - &stack[0]);
     constexpr int step = 6;
     for (auto i = 0u; i < stack.size(); i += step) {
-      fmt::printf("%02d:", i);
+      printf("%02d:", i);
       for (auto j = i; j < i + step && j < stack.size();
            j++) {
         if (j == sp_value) {
-          fmt::printf(">%08x<", stack[j]);
+          printf(">%08x<", stack[j]);
         } else {
-          fmt::printf(" %08x ", stack[j]);
+          printf(" %08x ", stack[j]);
         }
       }
-      fmt::printf("\n");
+      printf("\n");
     }
 #endif
 
     switch ((Opc)opc) {
     case Opc::abort:
-      fmt::printf("unexpected instruction\n");
+      printf("unexpected instruction\n");
       exception = Exception::ABORT;
 #ifdef DEBUG
-      fmt::printf("%p: abort\n", fmt::ptr(oldeip));
+      printf("%p: abort\n", oldeip);
 #endif
       return -1;
     case Opc::helper: {
@@ -154,13 +153,12 @@ int Program::run(int *eip) {
       f(eip, esp);
       eip += nr_args;
 #ifdef DEBUG
-      fmt::printf(
-          "%p: helper %p\n", fmt::ptr(oldeip), (void *)f);
+      printf("%p: helper %p\n", oldeip, (void *)f);
 #endif
     } break;
     case Opc::arg: to = *eip++; args.push_back(esp[to]);
 #ifdef DEBUG
-      fmt::printf("%p: arg %d\n", fmt::ptr(oldeip), to);
+      printf("%p: arg %d\n", oldeip, to);
 #endif
       break;
     case Opc::param:
@@ -168,7 +166,7 @@ int Program::run(int *eip) {
       esp[to] = args.back();
       args.pop_back();
 #ifdef DEBUG
-      fmt::printf("%p: param %d\n", fmt::ptr(oldeip), to);
+      printf("%p: param %d\n", oldeip, to);
 #endif
       break;
     case Opc::lai: {
@@ -176,8 +174,7 @@ int Program::run(int *eip) {
       from = *eip++;
       esp[to] = ((int)(esp - &stack[0]) + from) * 4;
 #ifdef DEBUG
-      fmt::printf(
-          "%p: lai %d, %d\n", fmt::ptr(oldeip), to, from);
+      printf("%p: lai %d, %d\n", oldeip, to, from);
 #endif
     } break;
     case Opc::la: {
@@ -185,8 +182,8 @@ int Program::run(int *eip) {
       from = esp[*eip++];
       esp[to] = ((int)(esp - &stack[0]) + from) * 4;
 #ifdef DEBUG
-      fmt::printf("%p: la %d, (%d)=%d\n", fmt::ptr(oldeip),
-          to, eip[-1], from);
+      printf("%p: la %d, (%d)=%d\n", oldeip, to, eip[-1],
+          from);
 #endif
     } break;
     case Opc::ld: {
@@ -194,8 +191,8 @@ int Program::run(int *eip) {
       from = *eip++;
       /* esp[to] = stack[esp[from]] */
 #ifdef DEBUG
-      fmt::printf("%p: ld %d, (%d)=%d\n", fmt::ptr(oldeip),
-          to, from, esp[from]);
+      printf("%p: ld %d, (%d)=%d\n", oldeip, to, from,
+          esp[from]);
 #endif
       if ((unsigned)esp[from] + sizeof(int) >=
           sizeof(int) * stack.size()) {
@@ -217,8 +214,8 @@ int Program::run(int *eip) {
       memcpy((char *)&stack[0] + esp[to], &esp[from],
           sizeof(int));
 #ifdef DEBUG
-      fmt::printf("%p: st (%d)=%d, %d\n", fmt::ptr(oldeip),
-          to, esp[to], from);
+      printf("%p: st (%d)=%d, %d\n", oldeip, to, esp[to],
+          from);
 #endif
     } break;
     case Opc::li: {
@@ -227,11 +224,9 @@ int Program::run(int *eip) {
       esp[to] = lhs;
 #ifdef DEBUG
       if (lhs < 0 || lhs > 256)
-        fmt::printf(
-            "%p: li %d %08x\n", fmt::ptr(oldeip), to, lhs);
+        printf("%p: li %d %08x\n", oldeip, to, lhs);
       else
-        fmt::printf(
-            "%p: li %d %d\n", fmt::ptr(oldeip), to, lhs);
+        printf("%p: li %d %d\n", oldeip, to, lhs);
 #endif
     } break;
     case Opc::mov:
@@ -240,8 +235,7 @@ int Program::run(int *eip) {
       to = *eip++;
       lhs = *eip++;
 #ifdef DEBUG
-      fmt::printf(
-          "%p: mov %d %d\n", fmt::ptr(oldeip), to, lhs);
+      printf("%p: mov %d %d\n", oldeip, to, lhs);
 #endif
       esp[to] = esp[lhs];
       break;
@@ -251,8 +245,7 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] + esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: add %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: add %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::sub:
@@ -261,8 +254,7 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] - esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: sub %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: sub %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::mul:
@@ -271,8 +263,7 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] * esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: mul %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: mul %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::div:
@@ -286,15 +277,14 @@ int Program::run(int *eip) {
         esp[to] = esp[lhs] / esp[rhs];
       }
 #ifdef DEBUG
-      fmt::printf("%p: div %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::br: {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
 #ifdef DEBUG
-      fmt::printf("%p: br %p\n", fmt::ptr(oldeip),
+      printf("%p: br %p\n", oldeip,
           lohi_to_ptr<void>(ptrlo, ptrhi));
 #endif
       eip = lohi_to_ptr<int>(ptrlo, ptrhi);
@@ -304,8 +294,8 @@ int Program::run(int *eip) {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
 #ifdef DEBUG
-      fmt::printf("%p: cond %d br %p\n", fmt::ptr(oldeip),
-          cond, lohi_to_ptr<void>(ptrlo, ptrhi));
+      printf("%p: cond %d br %p\n", oldeip, cond,
+          lohi_to_ptr<void>(ptrlo, ptrhi));
 #endif
       if (cond) { eip = lohi_to_ptr<int>(ptrlo, ptrhi); }
     } break;
@@ -315,8 +305,7 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] < esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: lt %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: lt %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::le:
@@ -325,8 +314,7 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] <= esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: le %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: le %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::eq:
@@ -335,8 +323,7 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] == esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: eq %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: eq %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::ge:
@@ -345,8 +332,7 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] >= esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: ge %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: ge %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::gt:
@@ -355,8 +341,7 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] > esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: gt %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: gt %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::ne:
@@ -365,13 +350,12 @@ int Program::run(int *eip) {
       rhs = *eip++;
       esp[to] = esp[lhs] != esp[rhs];
 #ifdef DEBUG
-      fmt::printf("%p: ne %d, %d, %d\n", fmt::ptr(oldeip),
-          to, lhs, rhs);
+      printf("%p: ne %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
     case Opc::inc_esp: constant = *eip++;
 #ifdef DEBUG
-      fmt::printf("%p: inc_esp %d\n", fmt::ptr(oldeip), to);
+      printf("%p: inc_esp %d\n", oldeip, to);
 #endif
       esp += constant;
       break;
@@ -382,8 +366,7 @@ int Program::run(int *eip) {
       frames.push_back(eip);
       eip = target;
 #ifdef DEBUG
-      fmt::printf(
-          "%p: call %p\n", fmt::ptr(oldeip), fmt::ptr(eip));
+      printf("%p: call %p\n", oldeip, eip);
 #endif
     } break;
     case Opc::ret: {
@@ -392,15 +375,13 @@ int Program::run(int *eip) {
       eip = frames.back();
       frames.pop_back();
 #ifdef DEBUG
-      fmt::printf(
-          "%p: ret %p\n", fmt::ptr(oldeip), fmt::ptr(eip));
+      printf("%p: ret %p\n", oldeip, eip);
 #endif
     } break;
     case Opc::alloca: {
       int size = *eip++;
 #ifdef DEBUG
-      fmt::printf(
-          "%p: alloca %d\n", fmt::ptr(oldeip), size);
+      printf("%p: alloca %d\n", oldeip, size);
 #endif
       ptrdiff_t base = esp - &stack[0];
       assert(base >= 0 && (unsigned)base <= stack.size());
@@ -424,7 +405,7 @@ int Program::run(int *eip) {
       break;
     case Opc::write: to = *eip++; io.write(esp[to]);
 #ifdef DEBUG
-      fmt::printf("%p: write %d\n", fmt::ptr(oldeip), to);
+      printf("%p: write %d\n", oldeip, to);
 #endif
       break;
     case Opc::quit: return 0;
@@ -436,7 +417,7 @@ int Program::run(int *eip) {
       }
       break;
     default:
-      fmt::printf("unexpected opc %d\n", opc);
+      printf("unexpected opc %d\n", opc);
       exception = Exception::INVOP;
       return -1;
     }
@@ -508,8 +489,8 @@ bool Compiler::handle_label(
   auto label_ptr = prog->get_textptr();
   labels[label] = label_ptr;
 #ifdef DEBUG
-  fmt::printf("add label %s, %p\n", label.str(),
-      fmt::ptr(label_ptr));
+  printf(
+      "add label %s, %p\n", label.str().c_str(), label_ptr);
 #endif
   for (auto *ptr : backfill_labels[label]) {
     ptr[0] = ptr_lo(label_ptr);
@@ -783,7 +764,7 @@ bool Compiler::handle_write(
 
 void log_curir(int *eip, int *esp) {
   const char *s = lohi_to_ptr<char>(eip[0], eip[1]);
-  fmt::printf("IR:%03d> %s\n", eip[2], s, s);
+  printf("IR:%03d> %s\n", eip[2], s);
 }
 
 std::unique_ptr<Program> Compiler::compile(
@@ -811,7 +792,7 @@ std::unique_ptr<Program> Compiler::compile(
 #endif
 
 #ifdef DEBUG
-    fmt::printf("compile %s\n", line);
+    printf("compile %s\n", line.c_str());
 #endif
 
     if (line.find_first_not_of("\r\n\v\f\t ") ==
@@ -832,8 +813,8 @@ std::unique_ptr<Program> Compiler::compile(
 
     if (suc) continue;
 
-    fmt::printf("[IGNORED] syntax error at line %d: '%s'\n",
-        lineno, line);
+    printf("[IGNORED] syntax error at line %d: '%s'\n",
+        lineno, line.c_str());
     /* IGNORED and continue */
   }
 

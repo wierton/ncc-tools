@@ -10,8 +10,6 @@
 #include <utility>
 #include <vector>
 
-#include "fmt/printf.h"
-
 namespace irsim {
 
 template <class T>
@@ -77,7 +75,7 @@ public:
       return ret;
     } else {
       int ret;
-      fmt::printf("please input a number: ");
+      // printf("please input a number: ");
       (*is) >> ret;
       return ret;
     }
@@ -188,13 +186,12 @@ public:
     }
 
 #ifdef DEBUG
-    fmt::printf(
-        "  %p: %s", fmt::ptr(oldptr), opc_to_string[opc]);
+    printf("  %p: %s", oldptr, opc_to_string[opc].c_str());
     for (int v :
         std::array<int, N>{static_cast<int>(args)...}) {
-      fmt::printf("0x%x ", v);
+      printf("0x%x ", v);
     }
-    fmt::printf("\n");
+    printf("\n");
 #endif
     return oldptr;
   }

@@ -2,7 +2,6 @@ OBJ_DIR := build
 ANTLR_SRCS := IRBaseVisitor.cpp IRLexer.cpp IRParser.cpp IRVisitor.cpp
 ANTLR_SRCS := $(addprefix $(OBJ_DIR)/, $(ANTLR_SRCS))
 SRCS := irsim.cc main.cc
-SRCS += $(shell find libfmt/ -name "*.cc")
 OBJS := $(patsubst %.cc,$(OBJ_DIR)/%.o,$(SRCS))
 BIN := $(OBJ_DIR)/irsim
 
