@@ -104,7 +104,7 @@ int Program::run(int *eip) {
       int from = *eip++;
       stack.back().at(to) =
           ((stack.size() - 1) << 16) | (from * 4);
-      if (stack.size() >= 65536 || from >= 65536) {
+      if (stack.size() >= 65536 || from * 4 >= 65536) {
         exception = Exception::STACK_LIMIT;
         return -1;
       }
