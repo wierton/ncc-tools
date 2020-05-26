@@ -123,29 +123,25 @@ class Program {
   unsigned memory_limit;
   unsigned insts_limit;
 
-  unsigned inst_counter;
-
   std::vector<std::unique_ptr<TransitionBlock>> codes;
-  TransitionBlock *curblk;
-  int *textptr;
-
-  std::vector<std::unique_ptr<int[]>> mempool;
-
-  /* running context */
-  std::vector<int> stack;
-  int *esp;
-  int *curf;
+  TransitionBlock *curblk = nullptr;
+  int *textptr = nullptr;
+  int *curf = nullptr;
 
   friend class Compiler;
 
-public:
+  /* running environment */
+  std::vector<int> args;
+  std::vector<int *> frames;
+  std::vector<std::vector<int>> stack;
+  std::array<int, 6> ctrl_regs = {};
+
   Exception exception;
 
 public:
   Program()
       : io(std::cin, std::cout),
         memory_limit(4 * 1024 * 1024), insts_limit(-1u) {
-    inst_counter = 0;
     curblk = new TransitionBlock;
     codes.push_back(
         std::unique_ptr<TransitionBlock>(curblk));
@@ -154,11 +150,13 @@ public:
     curf = gen_inst(Opc::quit, 0);
   }
 
+  int run(int *eip);
   void setMemoryLimit(unsigned lim) { memory_limit = lim; }
-
   void setInstsLimit(unsigned lim) { insts_limit = lim; }
-
-  unsigned getInstCounter() const { return inst_counter; }
+  unsigned getInstCounter() const {
+    return ctrl_regs[CR_COUNT];
+  }
+  Exception getException() const { return exception; }
 
   void setIO(ProgramIO io) { this->io = io; }
   void setInput(ProgramInput in) {
@@ -168,6 +166,7 @@ public:
     static_cast<ProgramOutput &>(this->io) = out;
   }
 
+private:
   int *get_textptr() const { return textptr; }
   void check_eof(unsigned N) {
     if (textptr + N + 2 >= &(*curblk)[curblk->size()]) {
@@ -218,8 +217,6 @@ public:
     return gen_inst(
         Opc::br, cond, ptr_lo(target), ptr_hi(target));
   }
-
-  int run(int *eip);
 };
 
 class Compiler {
@@ -309,21 +306,6 @@ public:
 
   std::unique_ptr<Program> compile(std::istream &is);
 };
-
-inline std::ostream &operator<<(
-    std::ostream &os, Exception exception) {
-  switch (exception) {
-  case Exception::IF: os << "IF"; break;
-  case Exception::LOAD: os << "LOAD"; break;
-  case Exception::STORE: os << "STORE"; break;
-  case Exception::DIV_ZERO: os << "DIV_ZERO"; break;
-  case Exception::TIMEOUT: os << "TIMEOUT"; break;
-  case Exception::OOM: os << "OOM"; break;
-  case Exception::ABORT: os << "ABORT"; break;
-  case Exception::INVOP: os << "INVOP"; break;
-  };
-  return os;
-}
 
 } // namespace irsim
 

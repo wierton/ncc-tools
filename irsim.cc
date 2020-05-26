@@ -11,8 +11,8 @@
 #include <tuple>
 #include <vector>
 
-#define LOGIR
-#define DEBUG
+// #define LOGIR
+// #define DEBUG
 
 #include "irsim.h"
 
@@ -34,11 +34,6 @@ std::map<Opc, std::string> opc_to_string{
 /* clang-format on */
 
 int Program::run(int *eip) {
-  std::vector<int> args;
-  std::vector<int *> frames;
-  std::vector<std::vector<int>> stack;
-  std::array<int, 6> ctrl_regs = {};
-
   /* clang-format off */
   int _start[] = {
       (int)Opc::alloca, 1,
@@ -96,9 +91,9 @@ int Program::run(int *eip) {
       int ptrlo = *eip++;
       int ptrhi = *eip++;
       int nr_args = *eip++;
-      using F = void(int *, int *);
+      using F = void(int *);
       F *f = lohi_to_ptr<F>(ptrlo, ptrhi);
-      f(eip, esp);
+      f(eip);
       eip += nr_args;
 #ifdef DEBUG
       printf("%p: helper %p\n", oldeip, (void *)f);
@@ -121,21 +116,25 @@ int Program::run(int *eip) {
       int from = stack.back().at(*eip++);
       int sel = ((unsigned)from >> 16);
       int addr = from & 0xFFFF;
+#ifdef DEBUG
+      printf("%p: ld %d, (%d:%d)\n", oldeip, to, sel, addr);
+      printf("size:%lu, sel.size:%lu %d\n", stack.size(),
+          stack[sel].size() * 4, addr + 4);
+#endif
       if ((int)stack.size() <= sel) {
         exception = Exception::LOAD;
-        return -1;
+        stack.back().at(to) = 0;
+        // return -1;
       } else if ((int)stack[sel].size() * 4 <= addr + 4) {
         exception = Exception::LOAD;
-        return -1;
+        stack.back().at(to) = 0;
+        // return -1;
       } else {
         uint8_t *from_ptr =
             (uint8_t *)&stack[sel][0] + addr;
         uint8_t *to_ptr = (uint8_t *)&stack.back().at(to);
         memcpy(to_ptr, from_ptr, sizeof(int));
       }
-#ifdef DEBUG
-      printf("%p: ld %d, (%d:%d)\n", oldeip, to, sel, addr);
-#endif
     } break;
     case Opc::st: {
       int to = stack.back().at(*eip++);
@@ -144,15 +143,15 @@ int Program::run(int *eip) {
       int addr = to & 0xFFFF;
       if ((int)stack.size() <= sel) {
         exception = Exception::LOAD;
-        return -1;
+        // return -1;
       } else if ((int)stack[sel].size() * 4 <= addr + 4) {
         exception = Exception::LOAD;
-        return -1;
+        // return -1;
       } else {
         uint8_t *from_ptr =
             (uint8_t *)&stack.back().at(from);
         uint8_t *to_ptr = (uint8_t *)&stack[sel][0] + addr;
-        printf("from:%d, to:%d:%d\n", from, sel, addr);
+        // printf("from:%d, to:%d:%d\n", from, sel, addr);
         memcpy(to_ptr, from_ptr, sizeof(int));
       }
 #ifdef DEBUG
@@ -597,8 +596,7 @@ bool Compiler::handle_goto_(
 
   auto label = *it++;
   auto label_ptr = labels[label];
-  auto code = prog->gen_inst(
-      Opc::jmp, ptr_lo(label_ptr), ptr_hi(label_ptr));
+  auto code = prog->gen_jmp(label_ptr);
   if (!label_ptr) {
     backfill_labels[label].push_back(code + 1);
   }
@@ -729,7 +727,7 @@ bool Compiler::handle_write(
   return true;
 }
 
-void log_curir(int *eip, int *esp) {
+void log_curir(int *eip) {
   const char *s = lohi_to_ptr<char>(eip[0], eip[1]);
   printf("IR:%03d> %s\n", eip[2], s);
 }
