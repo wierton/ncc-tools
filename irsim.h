@@ -47,8 +47,8 @@ enum class Opc {
   abort, // as 0
   inst_begin,
   helper, // native call
-  arg, param, lai, la, ld, st, inc_esp, li, mov, add, sub,
-  mul, div, br, cond_br, lt, le, eq, ge, gt, ne, alloca,
+  arg, param, la, ld, st, updsp, li, mov, add, sub,
+  mul, div, jmp, br, lt, le, eq, ge, gt, ne, alloca,
   call, ret, read, write,
   quit,
 };
@@ -167,7 +167,7 @@ public:
       curblk = new TransitionBlock;
       codes.push_back(
           std::unique_ptr<TransitionBlock>(curblk));
-      *textptr++ = (int)Opc::br;
+      *textptr++ = (int)Opc::jmp;
       *textptr++ = ptr_lo(&(curblk->at(0)));
       *textptr++ = ptr_hi(&(curblk->at(0)));
       textptr = &curblk->at(0);
@@ -201,14 +201,14 @@ public:
         Opc::call, ptr_lo(target), ptr_hi(target));
   }
 
-  int *gen_br(int *target) {
+  int *gen_jmp(int *target) {
     return gen_inst(
-        Opc::br, ptr_lo(target), ptr_hi(target));
+        Opc::jmp, ptr_lo(target), ptr_hi(target));
   }
 
-  int *gen_cond_br(int cond, int *target) {
+  int *gen_br(int cond, int *target) {
     return gen_inst(
-        Opc::cond_br, cond, ptr_lo(target), ptr_hi(target));
+        Opc::br, cond, ptr_lo(target), ptr_hi(target));
   }
 
   int run(int *eip);
@@ -279,6 +279,8 @@ public:
           std::pair<std::string, int>{name, stack_size});
       stack_size += size;
     }
+    printf(
+        "allocate %d for %s\n", it->second, name.c_str());
     return it->second;
   }
 

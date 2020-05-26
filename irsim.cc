@@ -13,8 +13,8 @@
 
 #include "irsim.h"
 
-// #define LOGIR
-// #define DEBUG
+#define LOGIR
+#define DEBUG
 // #define SAFE_POINTER
 
 namespace irsim {
@@ -22,13 +22,13 @@ namespace irsim {
 /* clang-format off */
 static std::map<Opc, std::string> opc_to_string{
     {Opc::abort, "abort"},     {Opc::helper, "helper"},
-    {Opc::lai, "lai"},         {Opc::la, "la"},
+    {Opc::la, "la"},
     {Opc::ld, "ld"},           {Opc::st, "st"},
-    {Opc::inc_esp, "inc_esp"}, {Opc::li, "li"},
+    {Opc::updsp, "updsp"},     {Opc::li, "li"},
     {Opc::mov, "mov"},         {Opc::add, "add"},
     {Opc::sub, "sub"},         {Opc::mul, "mul"},
-    {Opc::div, "div"},         {Opc::br, "br"},
-    {Opc::cond_br, "cond_br"}, {Opc::lt, "lt"},
+    {Opc::div, "div"},         {Opc::jmp, "jmp"},
+    {Opc::br, "br"},           {Opc::lt, "lt"},
     {Opc::le, "le"},           {Opc::eq, "eq"},
     {Opc::ge, "ge"},           {Opc::gt, "gt"},
     {Opc::ne, "ne"},           {Opc::alloca, "alloca"},
@@ -95,7 +95,7 @@ int Program::run(int *eip) {
       (int)Opc::alloca, 4,
       (int)Opc::li, ret, 0,
       (int)Opc::li, inc, inc,
-      (int)Opc::inc_esp, inc,
+      (int)Opc::updsp, inc,
       (int)Opc::call, ptr_lo(eip), ptr_hi(eip),
       (int)Opc::quit, 0,
   };
@@ -169,21 +169,12 @@ int Program::run(int *eip) {
       printf("%p: param %d\n", oldeip, to);
 #endif
       break;
-    case Opc::lai: {
+    case Opc::la: {
       to = *eip++;
       from = *eip++;
       esp[to] = ((int)(esp - &stack[0]) + from) * 4;
 #ifdef DEBUG
-      printf("%p: lai %d, %d\n", oldeip, to, from);
-#endif
-    } break;
-    case Opc::la: {
-      to = *eip++;
-      from = esp[*eip++];
-      esp[to] = ((int)(esp - &stack[0]) + from) * 4;
-#ifdef DEBUG
-      printf("%p: la %d, (%d)=%d\n", oldeip, to, eip[-1],
-          from);
+      printf("%p: la %d, %d\n", oldeip, to, from);
 #endif
     } break;
     case Opc::ld: {
@@ -280,16 +271,16 @@ int Program::run(int *eip) {
       printf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
-    case Opc::br: {
+    case Opc::jmp: {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
 #ifdef DEBUG
-      printf("%p: br %p\n", oldeip,
+      printf("%p: jmp %p\n", oldeip,
           lohi_to_ptr<void>(ptrlo, ptrhi));
 #endif
       eip = lohi_to_ptr<int>(ptrlo, ptrhi);
     } break;
-    case Opc::cond_br: {
+    case Opc::br: {
       int cond = esp[*eip++];
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
@@ -353,9 +344,9 @@ int Program::run(int *eip) {
       printf("%p: ne %d, %d, %d\n", oldeip, to, lhs, rhs);
 #endif
       break;
-    case Opc::inc_esp: constant = *eip++;
+    case Opc::updsp: constant = *eip++;
 #ifdef DEBUG
-      printf("%p: inc_esp %d\n", oldeip, to);
+      printf("%p: updsp %d\n", oldeip, to);
 #endif
       esp += constant;
       break;
@@ -459,7 +450,7 @@ int Compiler::primary_exp(
   } else if (tok[0] == '&') {
     auto var = getVar(&tok[1]);
     if (to == INT_MAX) to = newTemp();
-    prog->gen_inst(Opc::lai, to, var);
+    prog->gen_inst(Opc::la, to, var);
     return to;
   } else if (tok[0] == '*') {
     auto var = getVar(&tok[1]);
@@ -585,7 +576,7 @@ bool Compiler::handle_deref(
   auto x = getVar(*it++);
   auto y = getVar(*it++);
   auto tmp = newTemp();
-  prog->gen_inst(Opc::lai, tmp, y);
+  prog->gen_inst(Opc::la, tmp, y);
   prog->gen_inst(Opc::ld, x, y);
   return true;
 }
@@ -614,7 +605,7 @@ bool Compiler::handle_goto_(
   auto label = *it++;
   auto label_ptr = labels[label];
   auto code = prog->gen_inst(
-      Opc::br, ptr_lo(label_ptr), ptr_hi(label_ptr));
+      Opc::jmp, ptr_lo(label_ptr), ptr_hi(label_ptr));
   if (!label_ptr) {
     backfill_labels[label].push_back(code + 1);
   }
@@ -647,7 +638,7 @@ bool Compiler::handle_branch(
 
   auto tmp = newTemp();
   prog->gen_inst(s2op[opc], tmp, x, y);
-  auto code = prog->gen_cond_br(tmp, label_ptr);
+  auto code = prog->gen_br(tmp, label_ptr);
   if (!label_ptr) {
     backfill_labels[label].push_back(code + 2);
   }
@@ -718,10 +709,12 @@ bool Compiler::handle_call(
   backfill_args.clear();
 
   auto ret = newArg();
+  printf("allocate %d for ret\n", ret);
   auto inc = newArg();
+  printf("allocate %d for inc\n", inc);
 
   prog->gen_inst(Opc::li, inc, inc);
-  prog->gen_inst(Opc::inc_esp, inc);
+  prog->gen_inst(Opc::updsp, inc);
   prog->gen_call(funcs[f]);
   prog->gen_inst(Opc::mov, getVar(to), ret);
   return true;
