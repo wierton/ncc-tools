@@ -43,13 +43,20 @@ enum class Stmt {
   end,
 };
 
+enum CtrlRegs {
+  CR_RET,    // rw, used for return address
+  CR_SERIAL, // read only
+  CR_COUNT,  // rw
+  CR_ARG,    // rw
+};
+
 enum class Opc {
   abort, // as 0
-  inst_begin,
   helper, // native call
-  arg, param, la, ld, st, updsp, li, mov, add, sub,
-  mul, div, jmp, br, lt, le, eq, ge, gt, ne, alloca,
-  call, ret, read, write,
+  alloca,
+  la, ld, st, li, mov, add, sub,
+  mul, div, jmp, br, lt, le, eq, ge, gt, ne,
+  call, ret, mfcr, mtcr, mark,
   quit,
 };
 /* clang-format on */
@@ -144,7 +151,7 @@ public:
         std::unique_ptr<TransitionBlock>(curblk));
     textptr = &curblk->at(0);
 
-    curf = gen_inst(Opc::quit, Opc::quit);
+    curf = gen_inst(Opc::quit, 0);
   }
 
   void setMemoryLimit(unsigned lim) { memory_limit = lim; }
@@ -186,10 +193,11 @@ public:
     }
 
 #ifdef DEBUG
-    printf("  %p: %s", oldptr, opc_to_string[opc].c_str());
+    extern std::map<Opc, std::string> opc_to_string;
+    printf("+ %p: %s", oldptr, opc_to_string[opc].c_str());
     for (int v :
         std::array<int, N>{static_cast<int>(args)...}) {
-      printf("0x%x ", v);
+      printf(" 0x%x", v);
     }
     printf("\n");
 #endif
@@ -216,7 +224,6 @@ public:
 
 class Compiler {
   int stack_size;
-  int args_size;
 
   std::map<std::string, int> vars;
   std::map<std::string, int *> funcs;
@@ -225,8 +232,6 @@ class Compiler {
   std::map<int, bool> temps;
 
   std::map<std::string, std::vector<int *>> backfill_labels;
-
-  std::vector<int *> backfill_args;
 
   static std::map<Stmt,
       bool (Compiler::*)(Program *, const std::string &)>
@@ -262,8 +267,7 @@ public:
   Compiler() { clear_env(); }
 
   void clear_env() {
-    stack_size = 1;
-    args_size = -2;
+    stack_size = 0; // 0 for return value
     vars.clear();
     labels.clear();
   }
@@ -279,8 +283,10 @@ public:
           std::pair<std::string, int>{name, stack_size});
       stack_size += size;
     }
+#ifdef DEBUG
     printf(
         "allocate %d for %s\n", it->second, name.c_str());
+#endif
     return it->second;
   }
 
@@ -299,21 +305,6 @@ public:
     auto tmp = stack_size++;
     temps[tmp] = true;
     return tmp;
-  }
-
-  int newArg() {
-    stack_size++;
-    return stack_size - 1;
-  }
-
-  int getRet() { return -1; }
-
-  int getParam(const std::string &name) {
-    auto it = vars.find(name);
-    if (it == vars.end())
-      std::tie(it, std::ignore) = vars.insert(
-          std::pair<std::string, int>{name, args_size--});
-    return it->second;
   }
 
   std::unique_ptr<Program> compile(std::istream &is);
