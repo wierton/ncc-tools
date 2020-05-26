@@ -31,7 +31,8 @@ T *lohi_to_ptr(uint32_t lo, uint32_t hi) {
 
 /* clang-format off */
 enum class Exception {
-  IF, LOAD, STORE, DIV_ZERO, TIMEOUT, OOM, ABORT, INVOP,
+  NONE, IF, LOAD, STORE, DIV_ZERO, TIMEOUT, OOM, ABORT,
+  INVOP, STACK_LIMIT,
 };
 
 enum class Stmt {
@@ -120,8 +121,8 @@ public:
 class Program {
   ProgramIO io;
 
-  unsigned memory_limit;
-  unsigned insts_limit;
+  unsigned memory_limit = -1u;
+  unsigned insts_limit = -1u;
 
   std::vector<std::unique_ptr<TransitionBlock>> codes;
   TransitionBlock *curblk = nullptr;
@@ -134,14 +135,12 @@ class Program {
   std::vector<int> args;
   std::vector<int *> frames;
   std::vector<std::vector<int>> stack;
-  std::array<int, 6> ctrl_regs = {};
+  std::array<uint32_t, 6> ctrl_regs = {};
 
-  Exception exception;
+  Exception exception = Exception::NONE;
 
 public:
-  Program()
-      : io(std::cin, std::cout),
-        memory_limit(4 * 1024 * 1024), insts_limit(-1u) {
+  Program() : io(std::cin, std::cout) {
     curblk = new TransitionBlock;
     codes.push_back(
         std::unique_ptr<TransitionBlock>(curblk));
@@ -280,10 +279,6 @@ public:
           std::pair<std::string, int>{name, stack_size});
       stack_size += size;
     }
-#ifdef DEBUG
-    printf(
-        "allocate %d for %s\n", it->second, name.c_str());
-#endif
     return it->second;
   }
 

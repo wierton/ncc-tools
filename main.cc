@@ -24,8 +24,9 @@ int main(int argc, const char *argv[]) {
   prog->setInstsLimit(-1u);
   prog->setMemoryLimit(128 * 1024 * 1024);
   auto code = prog->run(compiler.getFunction("main"));
-  if (code == 0) {
-    printf("normally return, execute %d instructions\n",
+  if (code == 0 ||
+      prog->getException() == Exception::NONE) {
+    printf("return %d, execute %d instructions\n", code,
         prog->getInstCounter());
   } else {
     switch (prog->getException()) {
@@ -53,8 +54,14 @@ int main(int argc, const char *argv[]) {
       printf("abort (function not return)\n");
       break;
     case Exception::INVOP:
-      printf("invalid instruction (function not return)\n");
+      printf("invalid instruction (bug of irsim)\n");
       break;
+    case Exception::STACK_LIMIT:
+      printf(
+          "exceed the stack limit (depth 65536, max 65536 "
+          "words per stack frame)\n");
+      break;
+    default: break;
     }
   }
   return 0;

@@ -14,6 +14,12 @@
 // #define LOGIR
 // #define DEBUG
 
+#ifdef DEBUG
+#  define dprintf(fmt, ...) printf(fmt, ##__VA_ARGS__)
+#else
+#  define dprintf(fmt, ...)
+#endif
+
 #include "irsim.h"
 
 namespace irsim {
@@ -81,11 +87,7 @@ int Program::run(int *eip) {
 
     switch ((Opc)opc) {
     case Opc::abort:
-      printf("unexpected instruction\n");
       exception = Exception::ABORT;
-#ifdef DEBUG
-      printf("%p: abort\n", oldeip);
-#endif
       return -1;
     case Opc::helper: {
       int ptrlo = *eip++;
@@ -95,9 +97,7 @@ int Program::run(int *eip) {
       F *f = lohi_to_ptr<F>(ptrlo, ptrhi);
       f(eip);
       eip += nr_args;
-#ifdef DEBUG
-      printf("%p: helper %p\n", oldeip, (void *)f);
-#endif
+      dprintf("%p: helper %p\n", oldeip, (void *)f);
     } break;
     case Opc::la: {
       int to = *eip++;
@@ -105,30 +105,22 @@ int Program::run(int *eip) {
       stack.back().at(to) =
           ((stack.size() - 1) << 16) | (from * 4);
       if (stack.size() >= 65536 || from >= 65536) {
+        exception = Exception::STACK_LIMIT;
         return -1;
       }
-#ifdef DEBUG
-      printf("%p: la %d, %d\n", oldeip, to, from);
-#endif
+      dprintf("%p: la %d, %d\n", oldeip, to, from);
     } break;
     case Opc::ld: {
       int to = *eip++;
       int from = stack.back().at(*eip++);
       int sel = ((unsigned)from >> 16);
       int addr = from & 0xFFFF;
-#ifdef DEBUG
-      printf("%p: ld %d, (%d:%d)\n", oldeip, to, sel, addr);
-      printf("size:%lu, sel.size:%lu %d\n", stack.size(),
-          stack[sel].size() * 4, addr + 4);
-#endif
-      if ((int)stack.size() <= sel) {
+      dprintf(
+          "%p: ld %d, (%d:%d)\n", oldeip, to, sel, addr);
+      if ((int)stack.size() <= sel ||
+          (int)stack[sel].size() * 4 <= addr + 4) {
         exception = Exception::LOAD;
-        stack.back().at(to) = 0;
-        // return -1;
-      } else if ((int)stack[sel].size() * 4 <= addr + 4) {
-        exception = Exception::LOAD;
-        stack.back().at(to) = 0;
-        // return -1;
+        // return -1; // compatible with pysim
       } else {
         uint8_t *from_ptr =
             (uint8_t *)&stack[sel][0] + addr;
@@ -141,41 +133,32 @@ int Program::run(int *eip) {
       int from = *eip++;
       int sel = ((unsigned)to >> 16);
       int addr = to & 0xFFFF;
-      if ((int)stack.size() <= sel) {
+      if ((int)stack.size() <= sel ||
+          (int)stack[sel].size() * 4 <= addr + 4) {
         exception = Exception::LOAD;
-        // return -1;
-      } else if ((int)stack[sel].size() * 4 <= addr + 4) {
-        exception = Exception::LOAD;
-        // return -1;
+        // return -1; // compatible with pysim
       } else {
         uint8_t *from_ptr =
             (uint8_t *)&stack.back().at(from);
         uint8_t *to_ptr = (uint8_t *)&stack[sel][0] + addr;
-        // printf("from:%d, to:%d:%d\n", from, sel, addr);
         memcpy(to_ptr, from_ptr, sizeof(int));
       }
-#ifdef DEBUG
-      printf(
+      dprintf(
           "%p: st (%d:%d), %d\n", oldeip, sel, addr, from);
-#endif
     } break;
     case Opc::li: {
       int to = *eip++;
       int lhs = *eip++;
       stack.back().at(to) = lhs;
-#ifdef DEBUG
       if (lhs < 0 || lhs > 256)
-        printf("%p: li %d %08x\n", oldeip, to, lhs);
+        dprintf("%p: li %d %08x\n", oldeip, to, lhs);
       else
-        printf("%p: li %d %d\n", oldeip, to, lhs);
-#endif
+        dprintf("%p: li %d %d\n", oldeip, to, lhs);
     } break;
     case Opc::mov: {
       int to = *eip++;
       int lhs = *eip++;
-#ifdef DEBUG
-      printf("%p: mov %d %d\n", oldeip, to, lhs);
-#endif
+      dprintf("%p: mov %d %d\n", oldeip, to, lhs);
       stack.back().at(to) = stack.back().at(lhs);
     } break;
     case Opc::add: {
@@ -184,9 +167,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) + stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: add %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: add %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::sub: {
       int to = *eip++;
@@ -194,9 +175,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) - stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: sub %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: sub %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::mul: {
       int to = *eip++;
@@ -204,9 +183,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) * stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: mul %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: mul %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::div: {
       int to = *eip++;
@@ -219,27 +196,21 @@ int Program::run(int *eip) {
         stack.back().at(to) =
             stack.back().at(lhs) / stack.back().at(rhs);
       }
-#ifdef DEBUG
-      printf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::jmp: {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
-#ifdef DEBUG
-      printf("%p: jmp %p\n", oldeip,
+      dprintf("%p: jmp %p\n", oldeip,
           lohi_to_ptr<void>(ptrlo, ptrhi));
-#endif
       eip = lohi_to_ptr<int>(ptrlo, ptrhi);
     } break;
     case Opc::br: {
       int cond = stack.back().at(*eip++);
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
-#ifdef DEBUG
-      printf("%p: cond %d br %p\n", oldeip, cond,
+      dprintf("%p: cond %d br %p\n", oldeip, cond,
           lohi_to_ptr<void>(ptrlo, ptrhi));
-#endif
       if (cond) { eip = lohi_to_ptr<int>(ptrlo, ptrhi); }
     } break;
     case Opc::lt: {
@@ -248,9 +219,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) < stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: lt %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: lt %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::le: {
       int to = *eip++;
@@ -258,9 +227,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) <= stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: le %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: le %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::eq: {
       int to = *eip++;
@@ -268,9 +235,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) == stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: eq %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: eq %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::ge: {
       int to = *eip++;
@@ -278,9 +243,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) >= stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: ge %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: ge %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::gt: {
       int to = *eip++;
@@ -288,9 +251,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) > stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: gt %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: gt %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::ne: {
       int to = *eip++;
@@ -298,9 +259,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) != stack.back().at(rhs);
-#ifdef DEBUG
-      printf("%p: ne %d, %d, %d\n", oldeip, to, lhs, rhs);
-#endif
+      dprintf("%p: ne %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::call: {
       int ptrlo = *eip++;
@@ -309,24 +268,18 @@ int Program::run(int *eip) {
       frames.push_back(eip);
       stack.emplace_back();
       eip = target;
-#ifdef DEBUG
-      printf("%p: call %p\n", oldeip, eip);
-#endif
+      dprintf("%p: call %p\n", oldeip, eip);
     } break;
     case Opc::ret: {
       assert(stack.size() >= 1);
       stack.pop_back();
       eip = frames.back();
       frames.pop_back();
-#ifdef DEBUG
-      printf("%p: ret %p\n", oldeip, eip);
-#endif
+      dprintf("%p: ret %p\n", oldeip, eip);
     } break;
     case Opc::alloca: {
       int size = *eip++;
-#ifdef DEBUG
-      printf("%p: alloca %d\n", oldeip, size);
-#endif
+      dprintf("%p: alloca %d\n", oldeip, size);
       if (stack.empty()) stack.emplace_back();
       stack.back().resize(size);
       unsigned used_mem = 0;
@@ -342,26 +295,20 @@ int Program::run(int *eip) {
       switch (from) {
       case CR_COUNT:
         stack.back().at(to) = ctrl_regs.at(from);
-#ifdef DEBUG
-        printf("%p: mfcr %d, cr_count\n", oldeip, to);
-#endif
+        dprintf("%p: mfcr %d, cr_count\n", oldeip, to);
         break;
-      case CR_RET: stack.back().at(to) = ctrl_regs.at(from);
-#ifdef DEBUG
-        printf("%p: mfcr %d, cr_ret\n", oldeip, to);
-#endif
+      case CR_RET:
+        stack.back().at(to) = ctrl_regs.at(from);
+        dprintf("%p: mfcr %d, cr_ret\n", oldeip, to);
         break;
-      case CR_SERIAL: stack.back().at(to) = io.read();
-#ifdef DEBUG
-        printf("%p: mfcr %d, cr_serial\n", oldeip, to);
-#endif
+      case CR_SERIAL:
+        stack.back().at(to) = io.read();
+        dprintf("%p: mfcr %d, cr_serial\n", oldeip, to);
         break;
       case CR_ARG:
         stack.back().at(to) = args.back();
         args.pop_back();
-#ifdef DEBUG
-        printf("%p: mfcr %d, cr_arg\n", oldeip, to);
-#endif
+        dprintf("%p: mfcr %d, cr_arg\n", oldeip, to);
         break;
       default: abort();
       }
@@ -371,35 +318,33 @@ int Program::run(int *eip) {
       int from = *eip++;
       switch (to) {
       case CR_COUNT:
-#ifdef DEBUG
-        printf("%p: mtcr cr_count, %d\n", oldeip, from);
-#endif
+        dprintf("%p: mtcr cr_count, %d\n", oldeip, from);
         ctrl_regs.at(to) = stack.back().at(from);
         break;
-      case CR_RET: ctrl_regs.at(to) = stack.back().at(from);
-#ifdef DEBUG
-        printf("%p: mtcr cr_ret, %d\n", oldeip, from);
-#endif
+      case CR_RET:
+        ctrl_regs.at(to) = stack.back().at(from);
+        dprintf("%p: mtcr cr_ret, %d\n", oldeip, from);
         break;
-      case CR_SERIAL: io.write(stack.back().at(from));
-#ifdef DEBUG
-        printf("%p: mtcr cr_serial, %d\n", oldeip, from);
-#endif
+      case CR_SERIAL:
+        io.write(stack.back().at(from));
+        dprintf("%p: mtcr cr_serial, %d\n", oldeip, from);
         break;
-      case CR_ARG: args.push_back(stack.back().at(from));
-#ifdef DEBUG
-        printf("%p: mtcr cr_arg, %d\n", oldeip, from);
-#endif
+      case CR_ARG:
+        args.push_back(stack.back().at(from));
+        dprintf("%p: mtcr cr_arg, %d\n", oldeip, from);
         break;
       default: abort();
       }
     } break;
-    case Opc::mark: ctrl_regs[CR_COUNT]++; break;
+    case Opc::mark:
+      ctrl_regs[CR_COUNT]++;
+      if (ctrl_regs[CR_COUNT] >= insts_limit) {
+        exception = Exception::TIMEOUT;
+        return -1;
+      }
+      break;
     case Opc::quit: return stack.back().at(*eip++);
-    default:
-      printf("unexpected opc %d\n", opc);
-      exception = Exception::INVOP;
-      return -1;
+    default: exception = Exception::INVOP; return -1;
     }
   }
   return 0;
@@ -468,10 +413,8 @@ bool Compiler::handle_label(
   auto label = *it++;
   auto label_ptr = prog->get_textptr();
   labels[label] = label_ptr;
-#ifdef DEBUG
-  printf(
+  dprintf(
       "add label %s, %p\n", label.str().c_str(), label_ptr);
-#endif
   for (auto *ptr : backfill_labels[label]) {
     ptr[0] = ptr_lo(label_ptr);
     ptr[1] = ptr_hi(label_ptr);
@@ -495,9 +438,7 @@ bool Compiler::handle_func(
   funcs[f] = prog->get_textptr();
 
   if (prog->curf[0] == (int)Opc::alloca) {
-#ifdef DEBUG
-    printf("alloca %d\n", stack_size + 1);
-#endif
+    dprintf("alloca %d\n", stack_size + 1);
     prog->curf[1] = stack_size + 1;
     clear_env();
   }
@@ -756,9 +697,7 @@ std::unique_ptr<Program> Compiler::compile(
         ptr_hi(ir), lineno);
 #endif
 
-#ifdef DEBUG
-    printf("compile %s\n", line.c_str());
-#endif
+    dprintf("compile %s\n", line.c_str());
 
     if (line.find_first_not_of("\r\n\v\f\t ") ==
         line.npos) {
@@ -784,9 +723,7 @@ std::unique_ptr<Program> Compiler::compile(
   }
 
   if (prog->curf[0] == (int)Opc::alloca) {
-#ifdef DEBUG
-    printf("alloca %d\n", stack_size + 2);
-#endif
+    dprintf("alloca %d\n", stack_size + 2);
     prog->curf[1] = stack_size + 2;
   }
   prog->gen_inst(Opc::abort);
