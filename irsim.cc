@@ -11,9 +11,8 @@
 #include <tuple>
 #include <vector>
 
-// #define LOGIR
-// #define DEBUG
-// #define SAFE_POINTER
+#define LOGIR
+#define DEBUG
 
 #include "irsim.h"
 
@@ -119,9 +118,9 @@ int Program::run(int *eip) {
     } break;
     case Opc::ld: {
       int to = *eip++;
-      int from = *eip++;
+      int from = stack.back().at(*eip++);
       int sel = ((unsigned)from >> 16);
-      int addr = addr & 0xFFFF;
+      int addr = from & 0xFFFF;
       if ((int)stack.size() <= sel) {
         exception = Exception::LOAD;
         return -1;
@@ -129,20 +128,20 @@ int Program::run(int *eip) {
         exception = Exception::LOAD;
         return -1;
       } else {
-        uint8_t *from_ptr = (uint8_t *)&(stack[sel]) + addr;
+        uint8_t *from_ptr =
+            (uint8_t *)&stack[sel][0] + addr;
         uint8_t *to_ptr = (uint8_t *)&stack.back().at(to);
         memcpy(to_ptr, from_ptr, sizeof(int));
       }
 #ifdef DEBUG
-      printf("%p: ld %d, (%d)=%d\n", oldeip, to, from,
-          stack.back().at(from));
+      printf("%p: ld %d, (%d:%d)\n", oldeip, to, sel, addr);
 #endif
     } break;
     case Opc::st: {
-      int to = *eip++;
+      int to = stack.back().at(*eip++);
       int from = *eip++;
       int sel = ((unsigned)to >> 16);
-      int addr = addr & 0xFFFF;
+      int addr = to & 0xFFFF;
       if ((int)stack.size() <= sel) {
         exception = Exception::LOAD;
         return -1;
@@ -152,12 +151,13 @@ int Program::run(int *eip) {
       } else {
         uint8_t *from_ptr =
             (uint8_t *)&stack.back().at(from);
-        uint8_t *to_ptr = (uint8_t *)&(stack[sel]) + addr;
+        uint8_t *to_ptr = (uint8_t *)&stack[sel][0] + addr;
+        printf("from:%d, to:%d:%d\n", from, sel, addr);
         memcpy(to_ptr, from_ptr, sizeof(int));
       }
 #ifdef DEBUG
-      printf("%p: st (%d)=%d, %d\n", oldeip, to,
-          stack.back().at(to), from);
+      printf(
+          "%p: st (%d:%d), %d\n", oldeip, sel, addr, from);
 #endif
     } break;
     case Opc::li: {
@@ -377,8 +377,7 @@ int Program::run(int *eip) {
 #endif
         ctrl_regs.at(to) = stack.back().at(from);
         break;
-      case CR_RET:
-        ctrl_regs.at(to) = stack.back().at(from);
+      case CR_RET: ctrl_regs.at(to) = stack.back().at(from);
 #ifdef DEBUG
         printf("%p: mtcr cr_ret, %d\n", oldeip, from);
 #endif
