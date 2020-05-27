@@ -15,7 +15,7 @@
 // #define DEBUG
 
 #ifdef DEBUG
-#  define dprintf(...) fprintf(stderr, __VA_ARGS__)
+#  define dprintf(...) fprintf(stdout, __VA_ARGS__)
 #else
 #  define dprintf(fmt, ...)
 #endif
@@ -346,6 +346,7 @@ int Program::run(int *eip) {
     } break;
     case Opc::mark:
       ctrl_regs[CR_COUNT]++;
+      dprintf("%p: mark\n", oldeip);
       if (ctrl_regs[CR_COUNT] >= insts_limit) {
         exception = Exception::TIMEOUT;
         return -1;
@@ -457,7 +458,7 @@ bool Compiler::handle_func(
 bool Compiler::handle_assign(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*(\S+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
+      R"(^\s*([^*]\S*)\s*:=\s*(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
   if (it == std::sregex_token_iterator()) return false;
@@ -678,7 +679,7 @@ bool Compiler::handle_write(
 
 void log_curir(int *eip) {
   const char *s = lohi_to_ptr<char>(eip[0], eip[1]);
-  fprintf(stderr, "IR:%03d> %s\n", eip[2], s);
+  fprintf(stdout, "IR:%03d> %s\n", eip[2], s);
 }
 
 std::unique_ptr<Program> Compiler::compile(
