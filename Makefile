@@ -2,10 +2,10 @@ OBJ_DIR := build
 SRCS := irsim.cc main.cc
 OBJS := $(patsubst %.cc,$(OBJ_DIR)/%.o,$(SRCS))
 BIN  := $(OBJ_DIR)/irsim
-CXX  := g++-10
+CXX  := g++
 
 .DEFAULT_GOAL := $(BIN)
-CXXFLAGS := -Iinclude -std=c++20 -O0 -ggdb3 -Wall -MMD
+CXXFLAGS := -Iinclude -std=c++17 -O0 -ggdb3 -Wall -MMD
 -include $(OBJS:.o=.d)
 
 $(BIN): $(OBJS)
