@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <map>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -34,15 +35,6 @@ T *lohi_to_ptr(uint32_t lo, uint32_t hi) {
 enum class Exception {
   NONE, IF, LOAD, STORE, DIV_ZERO, OF, TIMEOUT, OOM, ABORT,
   INVOP,
-};
-
-enum class Stmt {
-  begin,
-  label = Stmt::begin,
-  func, assign, add, sub, mul, div, takeaddr, deref,
-  deref_assign, goto_, branch, ret, dec, arg, call,
-  param, read, write,
-  end,
 };
 
 enum CtrlRegs {
@@ -273,18 +265,11 @@ private:
 
 class Compiler {
   int stack_size;
-
   std::map<std::string, int> vars;
   std::map<std::string, int *> funcs;
   std::map<std::string, int *> labels;
-
   std::map<int, bool> temps;
-
   std::map<std::string, std::vector<int *>> backfill_labels;
-
-  static std::map<Stmt,
-      bool (Compiler::*)(Program *, const std::string &)>
-      handlers;
 
   static constexpr int m1[] = {1};
   static constexpr int m2[] = {1, 2};
@@ -312,6 +297,15 @@ class Compiler {
   bool handle_read(Program *, const std::string &line);
   bool handle_write(Program *, const std::string &line);
 
+  using TokenList = std::vector<std::string>;
+  TokenList splitTokens(const std::string line) {
+    std::string tmp;
+    std::vector<std::string> out;
+    std::istringstream iss(line);
+    while (iss >> tmp) out.push_back(tmp);
+    return out;
+  }
+
 public:
   Compiler() { clear_env(); }
 
@@ -332,6 +326,19 @@ public:
           std::pair<std::string, int>{name, stack_size});
       stack_size += size;
     }
+#ifdef DEBUG
+    fprintf(stdout, "allocate %d for %s\n", it->second,
+        name.c_str());
+#endif
+
+    /* erase duplicated temp space */
+    for (auto jt = temps.begin(); jt != temps.end();) {
+      if (it->second <= jt->second &&
+          it->second + size > jt->second)
+        jt = temps.erase(jt);
+      else
+        ++jt;
+    }
     return it->second;
   }
 
@@ -343,12 +350,19 @@ public:
     for (auto &kvpair : temps) {
       if (!kvpair.second) {
         kvpair.second = true;
+#ifdef DEBUG
+        fprintf(
+            stdout, "allocate old temp %d\n", kvpair.first);
+#endif
         return kvpair.first;
       }
     }
 
     auto tmp = stack_size++;
     temps[tmp] = true;
+#ifdef DEBUG
+    fprintf(stdout, "allocate temp %d\n", tmp);
+#endif
     return tmp;
   }
 

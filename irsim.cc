@@ -359,31 +359,6 @@ int Program::run(int *eip) {
   return 0;
 }
 
-/* clang-format off */
-std::map<Stmt, bool (Compiler::*)(Program *, const std::string &)>
-Compiler::handlers{
-    {Stmt::label, &Compiler::handle_label},
-    {Stmt::func, &Compiler::handle_func},
-    {Stmt::assign, &Compiler::handle_assign},
-    {Stmt::add, &Compiler::handle_arith},
-    {Stmt::sub, &Compiler::handle_arith},
-    {Stmt::mul, &Compiler::handle_arith},
-    {Stmt::div, &Compiler::handle_arith},
-    {Stmt::takeaddr, &Compiler::handle_takeaddr},
-    {Stmt::deref, &Compiler::handle_deref},
-    {Stmt::deref_assign, &Compiler::handle_deref_assign},
-    {Stmt::goto_, &Compiler::handle_goto_},
-    {Stmt::branch, &Compiler::handle_branch},
-    {Stmt::ret, &Compiler::handle_ret},
-    {Stmt::dec, &Compiler::handle_dec},
-    {Stmt::arg, &Compiler::handle_arg},
-    {Stmt::call, &Compiler::handle_call},
-    {Stmt::param, &Compiler::handle_param},
-    {Stmt::read, &Compiler::handle_read},
-    {Stmt::write, &Compiler::handle_write},
-};
-/* clang-format on */
-
 int Compiler::primary_exp(
     Program *prog, const std::string &tok, int to) {
   if (tok[0] == '#') {
@@ -415,6 +390,7 @@ int Compiler::primary_exp(
 /* stmt label */
 bool Compiler::handle_label(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(R"(^\s*LABEL\s+(\S+)\s*:\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
@@ -437,6 +413,7 @@ bool Compiler::handle_label(
 /* stmt func */
 bool Compiler::handle_func(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(R"(^\s*FUNCTION\s+(\S+)\s*:\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
@@ -459,6 +436,7 @@ bool Compiler::handle_func(
 
 bool Compiler::handle_assign(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*([^*]\S*)\s*:=\s*(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
@@ -472,6 +450,7 @@ bool Compiler::handle_assign(
 
 bool Compiler::handle_arith(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*(\S+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\S+)\s*(\+|\-|\*|\/)\s*(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
 
@@ -497,6 +476,7 @@ bool Compiler::handle_arith(
 
 bool Compiler::handle_takeaddr(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*(\S+)\s*:=\s*&\s*(\S+)\s*$)");
   /* stmt assign */
@@ -511,8 +491,9 @@ bool Compiler::handle_takeaddr(
 
 bool Compiler::handle_deref(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
-      R"(^\s*(\S+)\s*:=\s*\*\s*(\S+)\s*$)");
+      R"(^\s*([^*]\S+)\s*:=\s*\*\s*(\S+)\s*$)");
   /* stmt assign */
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
@@ -527,6 +508,7 @@ bool Compiler::handle_deref(
 
 bool Compiler::handle_deref_assign(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*\*(\S+)\s+:=\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
@@ -541,6 +523,7 @@ bool Compiler::handle_deref_assign(
 
 bool Compiler::handle_goto_(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(R"(^\s*GOTO\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
@@ -557,6 +540,7 @@ bool Compiler::handle_goto_(
 
 bool Compiler::handle_branch(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*IF\s+(#[\+\-]?\d+|[&\*]?\S+)\s*(<|>|<=|>=|==|!=)\s*(#[\+\-]?\d+|[&\*]?\S+)\s+GOTO\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
@@ -590,6 +574,7 @@ bool Compiler::handle_branch(
 
 bool Compiler::handle_ret(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*RETURN\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
@@ -604,6 +589,7 @@ bool Compiler::handle_ret(
 
 bool Compiler::handle_dec(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(R"(^\s*DEC\s+(\S+)\s+(\d+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
@@ -617,6 +603,7 @@ bool Compiler::handle_dec(
 
 bool Compiler::handle_arg(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*ARG\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
@@ -630,6 +617,7 @@ bool Compiler::handle_arg(
 
 bool Compiler::handle_call(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*(\S+)\s*:=\s*CALL\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
@@ -646,6 +634,7 @@ bool Compiler::handle_call(
 
 bool Compiler::handle_param(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(R"(^\s*PARAM\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
@@ -656,6 +645,7 @@ bool Compiler::handle_param(
 
 bool Compiler::handle_read(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(R"(^\s*READ\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
@@ -668,6 +658,7 @@ bool Compiler::handle_read(
 
 bool Compiler::handle_write(
     Program *prog, const std::string &line) {
+  dprintf("at %s, %d\n", __func__, __LINE__);
   static std::regex pat(
       R"(^\s*WRITE\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
@@ -692,7 +683,6 @@ std::unique_ptr<Program> Compiler::compile(
   auto prog = std::make_unique<Program>();
   unsigned lineno = 0;
   while ((is.peek(), is.good())) {
-    bool suc = false;
     lineno++;
     std::string line;
     std::getline(is, line);
@@ -716,12 +706,47 @@ std::unique_ptr<Program> Compiler::compile(
     }
 
     clearTemps();
-    for (int i = (int)Stmt::begin; i < (int)Stmt::end;
-         i++) {
-      if ((this->*handlers[(Stmt)i])(&*prog, line)) {
-        if (i == (int)Stmt::func) temps.clear();
-        suc = true;
-        break;
+    std::vector<std::string> tokens = splitTokens(line);
+    bool suc = false;
+    if (tokens.size() == 0) {
+      suc = true;
+    } else if (tokens[0] == "LABEL") {
+      suc = handle_label(&*prog, line);
+    } else if (tokens[0] == "FUNCTION") {
+      suc = handle_func(&*prog, line);
+    } else if (tokens[0] == "GOTO") {
+      suc = handle_goto_(&*prog, line);
+    } else if (tokens[0] == "IF") {
+      suc = handle_branch(&*prog, line);
+    } else if (tokens[0] == "RETURN") {
+      suc = handle_ret(&*prog, line);
+    } else if (tokens[0] == "DEC") {
+      suc = handle_dec(&*prog, line);
+    } else if (tokens[0] == "ARG") {
+      suc = handle_arg(&*prog, line);
+    } else if (tokens.size() == 4 && tokens[1] == ":=" &&
+             tokens[2] == "CALL") {
+      suc = handle_call(&*prog, line);
+    } else if (tokens[0] == "PARAM") {
+      suc = handle_param(&*prog, line);
+    } else if (tokens[0] == "READ") {
+      suc = handle_read(&*prog, line);
+    } else if (tokens[0] == "WRITE") {
+      suc = handle_write(&*prog, line);
+    } else {
+      std::vector<bool (Compiler::*)(
+          Program *, const std::string &)>
+          handlers{
+              &Compiler::handle_assign,
+              &Compiler::handle_arith,
+              &Compiler::handle_takeaddr,
+              &Compiler::handle_deref,
+              &Compiler::handle_deref_assign,
+          };
+
+      for (auto &h : handlers) {
+        suc = (this->*h)(&*prog, line);
+        if (suc) break;
       }
     }
 
