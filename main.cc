@@ -4,16 +4,18 @@
 #include <stdio.h>
 #include <string>
 
+#define eprintf(...) fprintf(stderr, __VA_ARGS__)
+
 int main(int argc, const char *argv[]) {
   if (argc <= 1) {
-    printf("usage: irsim [*.ir]\n");
+    eprintf("usage: irsim [*.ir]\n");
     return 0;
   }
 
   std::ifstream ifs(argv[1]);
 
   if (!ifs.good()) {
-    printf("'%s' no such file\n", argv[1]);
+    eprintf("'%s' no such file\n", argv[1]);
     return 0;
   }
 
@@ -24,45 +26,45 @@ int main(int argc, const char *argv[]) {
   prog->setMemoryLimit(128 * 1024 * 1024);
   auto *entry = compiler.getFunction("main");
   if (!entry) {
-    printf("no main in %s\n", argv[1]);
+    eprintf("no main in %s\n", argv[1]);
     return 0;
   }
 
   auto code = prog->run(entry);
   if (code == 0 ||
       prog->getException() == Exception::NONE) {
-    printf("return %d, execute %d instructions\n", code,
+    eprintf("return %d, execute %d instructions\n", code,
         prog->getInstCounter());
   } else {
     switch (prog->getException()) {
     case Exception::IF:
-      printf(
+      eprintf(
           "fetch instruction error (labels used but not "
           "defined)\n");
       break;
     case Exception::LOAD:
-      printf("memory load exception\n");
+      eprintf("memory load exception\n");
       break;
     case Exception::STORE:
-      printf("memory store exception\n");
+      eprintf("memory store exception\n");
       break;
     case Exception::DIV_ZERO:
-      printf("divided by zero exception\n");
+      eprintf("divided by zero exception\n");
       break;
     case Exception::OF:
-      printf("divide INT_MIN by -1 exception\n");
+      eprintf("divide INT_MIN by -1 exception\n");
       break;
     case Exception::TIMEOUT:
-      printf("run out of instructions\n");
+      eprintf("run out of instructions\n");
       break;
     case Exception::OOM:
-      printf("run out of memory\n");
+      eprintf("run out of memory\n");
       break;
     case Exception::ABORT:
-      printf("abort (function not return)\n");
+      eprintf("abort (function not return)\n");
       break;
     case Exception::INVOP:
-      printf("invalid instruction (bug of irsim)\n");
+      eprintf("invalid instruction (bug of irsim)\n");
       break;
     default: break;
     }

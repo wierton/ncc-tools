@@ -15,7 +15,7 @@
 // #define DEBUG
 
 #ifdef DEBUG
-#  define dprintf(fmt, ...) printf(fmt, ##__VA_ARGS__)
+#  define dprintf(...) fprintf(stderr, __VA_ARGS__)
 #else
 #  define dprintf(fmt, ...)
 #endif
@@ -63,26 +63,26 @@ int Program::run(int *eip) {
     int opc = *eip++;
 
 #ifdef DEBUG
-    printf("stack:\n");
+    dprintf("stack:\n");
     for (auto d = 0u; d < stack.size(); d++) {
       auto &s = stack[d];
       constexpr int step = 6;
       for (auto i = 0u; i < s.size(); i += step) {
         if (i == 0)
-          printf("%02d:%02d:", d, i);
+          dprintf("%02d:%02d:", d, i);
         else
-          printf("  :%02d:", i);
+          dprintf("  :%02d:", i);
         for (auto j = i; j < i + step && j < s.size();
              j++) {
-          printf(" %08x", s[j]);
+          dprintf(" %08x", s[j]);
         }
-        printf("\n");
+        dprintf("\n");
       }
     }
-    printf("crs:  ");
+    dprintf("crs:  ");
     for (auto i = 0u; i < ctrl_regs.size(); i++)
-      printf(" %08x", ctrl_regs[i]);
-    printf("\n");
+      dprintf(" %08x", ctrl_regs[i]);
+    dprintf("\n");
 #endif
 
     switch ((Opc)opc) {
@@ -678,7 +678,7 @@ bool Compiler::handle_write(
 
 void log_curir(int *eip) {
   const char *s = lohi_to_ptr<char>(eip[0], eip[1]);
-  printf("IR:%03d> %s\n", eip[2], s);
+  fprintf(stderr, "IR:%03d> %s\n", eip[2], s);
 }
 
 std::unique_ptr<Program> Compiler::compile(
@@ -725,8 +725,9 @@ std::unique_ptr<Program> Compiler::compile(
 
     if (suc) continue;
 
-    printf("[IGNORED] syntax error at line %d: '%s'\n",
-        lineno, line.c_str());
+    fprintf(stderr,
+        "[IGNORED] syntax error at line %d: '%s'\n", lineno,
+        line.c_str());
     /* IGNORED and continue */
   }
 
