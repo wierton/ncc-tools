@@ -412,7 +412,7 @@ int Compiler::primary_exp(
 /* stmt label */
 bool Compiler::handle_label(
     Program *prog, const std::string &line) {
-  static std::regex pat(R"(^\s*LABEL\s+(\w+)\s*:\s*$)");
+  static std::regex pat(R"(^\s*LABEL\s+(\S+)\s*:\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
 
@@ -434,7 +434,7 @@ bool Compiler::handle_label(
 /* stmt func */
 bool Compiler::handle_func(
     Program *prog, const std::string &line) {
-  static std::regex pat(R"(^\s*FUNCTION\s+(\w+)\s*:\s*$)");
+  static std::regex pat(R"(^\s*FUNCTION\s+(\S+)\s*:\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) return false;
@@ -457,7 +457,7 @@ bool Compiler::handle_func(
 bool Compiler::handle_assign(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*(\w+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+      R"(^\s*(\S+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
   if (it == std::sregex_token_iterator()) return false;
@@ -470,7 +470,7 @@ bool Compiler::handle_assign(
 bool Compiler::handle_arith(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*(\w+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\w+)\s*(\+|\-|\*|\/)\s*(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+      R"(^\s*(\S+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\S+)\s*(\+|\-|\*|\/)\s*(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
 
   static std::map<std::string, Opc> m{
       {"+", Opc::add},
@@ -495,7 +495,7 @@ bool Compiler::handle_arith(
 bool Compiler::handle_takeaddr(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*(\w+)\s*:=\s*&\s*(\w+)\s*$)");
+      R"(^\s*(\S+)\s*:=\s*&\s*(\S+)\s*$)");
   /* stmt assign */
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
@@ -509,7 +509,7 @@ bool Compiler::handle_takeaddr(
 bool Compiler::handle_deref(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*(\w+)\s*:=\s*\*\s*(\w+)\s*$)");
+      R"(^\s*(\S+)\s*:=\s*\*\s*(\S+)\s*$)");
   /* stmt assign */
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
@@ -525,7 +525,7 @@ bool Compiler::handle_deref(
 bool Compiler::handle_deref_assign(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*\*(\w+)\s+:=\s+(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+      R"(^\s*\*(\S+)\s+:=\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
   if (it == std::sregex_token_iterator()) return false;
@@ -538,7 +538,7 @@ bool Compiler::handle_deref_assign(
 
 bool Compiler::handle_goto_(
     Program *prog, const std::string &line) {
-  static std::regex pat(R"(^\s*GOTO\s+(\w+)\s*$)");
+  static std::regex pat(R"(^\s*GOTO\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) { return false; }
@@ -555,7 +555,7 @@ bool Compiler::handle_goto_(
 bool Compiler::handle_branch(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*IF\s+(#[\+\-]?\d+|[&\*]?\w+)\s*(<|>|<=|>=|==|!=)\s*(#[\+\-]?\d+|[&\*]?\w+)\s+GOTO\s+(\w+)\s*$)");
+      R"(^\s*IF\s+(#[\+\-]?\d+|[&\*]?\S+)\s*(<|>|<=|>=|==|!=)\s*(#[\+\-]?\d+|[&\*]?\S+)\s+GOTO\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m4);
   if (it == std::sregex_token_iterator()) return false;
@@ -588,7 +588,7 @@ bool Compiler::handle_branch(
 bool Compiler::handle_ret(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*RETURN\s+(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+      R"(^\s*RETURN\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) return false;
@@ -601,7 +601,7 @@ bool Compiler::handle_ret(
 
 bool Compiler::handle_dec(
     Program *prog, const std::string &line) {
-  static std::regex pat(R"(^\s*DEC\s+(\w+)\s+(\d+)\s*$)");
+  static std::regex pat(R"(^\s*DEC\s+(\S+)\s+(\d+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
   if (it == std::sregex_token_iterator()) return false;
@@ -615,7 +615,7 @@ bool Compiler::handle_dec(
 bool Compiler::handle_arg(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*ARG\s+(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+      R"(^\s*ARG\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) return false;
@@ -628,7 +628,7 @@ bool Compiler::handle_arg(
 bool Compiler::handle_call(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*(\w+)\s*:=\s*CALL\s+(\w+)\s*$)");
+      R"(^\s*(\S+)\s*:=\s*CALL\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m2);
   if (it == std::sregex_token_iterator()) return false;
@@ -643,7 +643,7 @@ bool Compiler::handle_call(
 
 bool Compiler::handle_param(
     Program *prog, const std::string &line) {
-  static std::regex pat(R"(^\s*PARAM\s+(\w+)\s*$)");
+  static std::regex pat(R"(^\s*PARAM\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) return false;
@@ -653,7 +653,7 @@ bool Compiler::handle_param(
 
 bool Compiler::handle_read(
     Program *prog, const std::string &line) {
-  static std::regex pat(R"(^\s*READ\s+(\w+)\s*$)");
+  static std::regex pat(R"(^\s*READ\s+(\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) return false;
@@ -666,7 +666,7 @@ bool Compiler::handle_read(
 bool Compiler::handle_write(
     Program *prog, const std::string &line) {
   static std::regex pat(
-      R"(^\s*WRITE\s+(#[\+\-]?\d+|[&\*]?\w+)\s*$)");
+      R"(^\s*WRITE\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
   auto it = std::sregex_token_iterator(
       line.begin(), line.end(), pat, m1);
   if (it == std::sregex_token_iterator()) return false;
