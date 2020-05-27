@@ -57,7 +57,7 @@ enum class Opc {
   helper, // native call
   alloca,
   la, ld, st, li, mov, add, sub,
-  mul, div, jmp, br, lt, le, eq, ge, gt, ne,
+  mul, div, jmp, br, slt, sle, seq, sge, sgt, sne,
   call, ret, mfcr, mtcr, mark,
   quit,
 };

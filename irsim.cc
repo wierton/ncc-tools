@@ -31,9 +31,9 @@ std::map<Opc, std::string> opc_to_string{
     {Opc::ld, "ld"}, {Opc::st, "st"}, {Opc::li, "li"},
     {Opc::mov, "mov"}, {Opc::add, "add"}, {Opc::sub, "sub"},
     {Opc::mul, "mul"}, {Opc::div, "div"}, {Opc::jmp, "jmp"},
-    {Opc::br, "br"}, {Opc::lt, "lt"}, {Opc::le, "le"},
-    {Opc::eq, "eq"}, {Opc::ge, "ge"}, {Opc::gt, "gt"},
-    {Opc::ne, "ne"}, {Opc::call, "call"}, {Opc::ret, "ret"},
+    {Opc::br, "br"}, {Opc::slt, "slt"}, {Opc::sle, "sle"},
+    {Opc::seq, "seq"}, {Opc::sge, "sge"}, {Opc::sgt, "sgt"},
+    {Opc::sne, "sne"}, {Opc::call, "call"}, {Opc::ret, "ret"},
     {Opc::mfcr, "mfcr"}, {Opc::mtcr, "mtcr"},
     {Opc::quit, "quit"}, {Opc::mark, "mark"},
 };
@@ -214,53 +214,53 @@ int Program::run(int *eip) {
           lohi_to_ptr<void>(ptrlo, ptrhi));
       if (cond) { eip = lohi_to_ptr<int>(ptrlo, ptrhi); }
     } break;
-    case Opc::lt: {
+    case Opc::slt: {
       int to = *eip++;
       int lhs = *eip++;
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) < stack.back().at(rhs);
-      dprintf("%p: lt %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dprintf("%p: slt %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
-    case Opc::le: {
+    case Opc::sle: {
       int to = *eip++;
       int lhs = *eip++;
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) <= stack.back().at(rhs);
-      dprintf("%p: le %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dprintf("%p: sle %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
-    case Opc::eq: {
+    case Opc::seq: {
       int to = *eip++;
       int lhs = *eip++;
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) == stack.back().at(rhs);
-      dprintf("%p: eq %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dprintf("%p: seq %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
-    case Opc::ge: {
+    case Opc::sge: {
       int to = *eip++;
       int lhs = *eip++;
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) >= stack.back().at(rhs);
-      dprintf("%p: ge %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dprintf("%p: sge %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
-    case Opc::gt: {
+    case Opc::sgt: {
       int to = *eip++;
       int lhs = *eip++;
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) > stack.back().at(rhs);
-      dprintf("%p: gt %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dprintf("%p: sgt %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
-    case Opc::ne: {
+    case Opc::sne: {
       int to = *eip++;
       int lhs = *eip++;
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) != stack.back().at(rhs);
-      dprintf("%p: ne %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dprintf("%p: sne %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::call: {
       int ptrlo = *eip++;
@@ -571,12 +571,12 @@ bool Compiler::handle_branch(
   auto label_ptr = labels[label];
 
   static std::map<std::string, Opc> s2op{
-      {"<", Opc::lt},
-      {">", Opc::gt},
-      {"<=", Opc::le},
-      {">=", Opc::ge},
-      {"==", Opc::eq},
-      {"!=", Opc::ne},
+      {"<", Opc::slt},
+      {">", Opc::sgt},
+      {"<=", Opc::sle},
+      {">=", Opc::sge},
+      {"==", Opc::seq},
+      {"!=", Opc::sne},
   };
 
   auto tmp = newTemp();
