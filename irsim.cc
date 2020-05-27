@@ -312,8 +312,10 @@ int Program::run(int *eip) {
         dprintf("%p: mfcr %d, cr_serial\n", oldeip, to);
         break;
       case CR_ARG:
-        stack.back().at(to) = args.back();
-        args.pop_back();
+        if (args.size()) {
+          stack.back().at(to) = args.back();
+          args.pop_back();
+        }
         dprintf("%p: mfcr %d, cr_arg\n", oldeip, to);
         break;
       default: abort();
