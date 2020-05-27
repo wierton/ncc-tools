@@ -2,14 +2,14 @@
 #define IRSIM_H
 
 #include <array>
+#include <cassert>
+#include <climits>
 #include <iostream>
-#include <limits.h>
 #include <map>
 #include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace irsim {
@@ -264,6 +264,8 @@ private:
 };
 
 class Compiler {
+  int temp_ptr;
+  static constexpr int temp_end = 4;
   int stack_size;
   std::map<std::string, int> vars;
   std::map<std::string, int *> funcs;
@@ -279,25 +281,26 @@ class Compiler {
   int primary_exp(Program *prog, const std::string &tok,
       int to = INT_MAX);
 
-  bool handle_label(Program *, const std::string &line);
-  bool handle_func(Program *, const std::string &line);
-  bool handle_assign(Program *, const std::string &line);
-  bool handle_arith(Program *, const std::string &line);
-  bool handle_takeaddr(Program *, const std::string &line);
-  bool handle_deref(Program *, const std::string &line);
-  bool handle_deref_assign(
-      Program *, const std::string &line);
-  bool handle_goto_(Program *, const std::string &line);
-  bool handle_branch(Program *, const std::string &line);
-  bool handle_ret(Program *, const std::string &line);
-  bool handle_dec(Program *, const std::string &line);
-  bool handle_arg(Program *, const std::string &line);
-  bool handle_call(Program *, const std::string &line);
-  bool handle_param(Program *, const std::string &line);
-  bool handle_read(Program *, const std::string &line);
-  bool handle_write(Program *, const std::string &line);
-
   using TokenList = std::vector<std::string>;
+
+  bool handle_label(Program *, const TokenList &toks);
+  bool handle_func(Program *, const TokenList &toks);
+  bool handle_assign(Program *, const TokenList &toks);
+  bool handle_arith(Program *, const TokenList &toks);
+  bool handle_takeaddr(Program *, const TokenList &toks);
+  bool handle_deref(Program *, const TokenList &toks);
+  bool handle_deref_assign(
+      Program *, const TokenList &toks);
+  bool handle_goto_(Program *, const TokenList &toks);
+  bool handle_branch(Program *, const TokenList &toks);
+  bool handle_ret(Program *, const TokenList &toks);
+  bool handle_dec(Program *, const TokenList &toks);
+  bool handle_arg(Program *, const TokenList &toks);
+  bool handle_call(Program *, const TokenList &toks);
+  bool handle_param(Program *, const TokenList &toks);
+  bool handle_read(Program *, const TokenList &toks);
+  bool handle_write(Program *, const TokenList &toks);
+
   TokenList splitTokens(const std::string line) {
     std::string tmp;
     std::vector<std::string> out;
@@ -310,7 +313,8 @@ public:
   Compiler() { clear_env(); }
 
   void clear_env() {
-    stack_size = 0; // 0 for return value
+    temp_ptr = 0;
+    stack_size = temp_end; // 0 for return value
     vars.clear();
     labels.clear();
   }
@@ -330,39 +334,14 @@ public:
     fprintf(stdout, "allocate %d for %s\n", it->second,
         name.c_str());
 #endif
-
-    /* erase duplicated temp space */
-    for (auto jt = temps.begin(); jt != temps.end();) {
-      if (it->second <= jt->second &&
-          it->second + size > jt->second)
-        jt = temps.erase(jt);
-      else
-        ++jt;
-    }
     return it->second;
   }
 
-  void clearTemps() {
-    for (auto &kvpair : temps) kvpair.second = false;
-  }
+  void clearTemps() { temp_ptr = 0; }
 
   int newTemp() {
-    for (auto &kvpair : temps) {
-      if (!kvpair.second) {
-        kvpair.second = true;
-#ifdef DEBUG
-        fprintf(
-            stdout, "allocate old temp %d\n", kvpair.first);
-#endif
-        return kvpair.first;
-      }
-    }
-
-    auto tmp = stack_size++;
-    temps[tmp] = true;
-#ifdef DEBUG
-    fprintf(stdout, "allocate temp %d\n", tmp);
-#endif
+    int tmp = temp_ptr++;
+    assert(tmp < temp_end);
     return tmp;
   }
 

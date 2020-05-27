@@ -1,15 +1,6 @@
-#include <cassert>
-#include <climits>
 #include <cstdint>
-#include <cstdlib>
 #include <fstream>
-#include <iostream>
-#include <map>
-#include <memory>
-#include <regex>
-#include <string>
-#include <tuple>
-#include <vector>
+#include <cstring>
 
 // #define LOGIR
 // #define DEBUG
@@ -389,15 +380,12 @@ int Compiler::primary_exp(
 
 /* stmt label */
 bool Compiler::handle_label(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(R"(^\s*LABEL\s+(\S+)\s*:\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m1);
+  // LABEL ID :
+  if (toks.size() != 3 || toks.at(2) != ":") return false;
 
-  if (it == std::sregex_token_iterator()) return false;
-
-  auto label = *it++;
+  auto &label = toks.at(1);
   auto label_ptr = prog->get_textptr();
   labels[label] = label_ptr;
   dprintf(
@@ -412,17 +400,13 @@ bool Compiler::handle_label(
 
 /* stmt func */
 bool Compiler::handle_func(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(R"(^\s*FUNCTION\s+(\S+)\s*:\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m1);
-  if (it == std::sregex_token_iterator()) return false;
+  // FUNCTION ID :
+  if (toks.size() != 3 || toks.at(2) != ":") return false;
 
-  auto f = *it++;
-
-  prog->gen_inst(
-      Opc::abort); // last function should manually ret
+  auto &f = toks.at(1);
+  prog->gen_inst(Opc::abort); // for last func
   funcs[f] = prog->get_textptr();
 
   if (prog->curf[0] == (int)Opc::alloca) {
@@ -435,24 +419,22 @@ bool Compiler::handle_func(
 }
 
 bool Compiler::handle_assign(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*([^*]\S*)\s*:=\s*(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m2);
-  if (it == std::sregex_token_iterator()) return false;
-
-  auto x = getVar(*it++);
-  primary_exp(prog, *it++, x);
+  // ID := (ID|NUM|&ID)
+  if (toks.size() != 3 || toks.at(0).at(0) == '*' ||
+      toks.at(1) != ":=")
+    return false;
+  auto x = getVar(toks.at(0));
+  primary_exp(prog, toks.at(2), x);
   return true;
 }
 
 bool Compiler::handle_arith(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*(\S+)\s*:=\s*(#[\+\-]?\d+|[&\*]?\S+)\s*(\+|\-|\*|\/)\s*(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
+  // ID := (ID|NUM|&ID) OP (ID|NUM|&ID)
+  if (toks.size() != 5 || toks.at(1) != ":=") return false;
 
   static std::map<std::string, Opc> m{
       {"+", Opc::add},
@@ -461,45 +443,41 @@ bool Compiler::handle_arith(
       {"/", Opc::div},
   };
 
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m4);
-  if (it == std::sregex_token_iterator()) return false;
+  if (m.find(toks.at(3)) == m.end()) return false;
 
-  auto x = getVar(*it++);
-  auto y = primary_exp(prog, *it++);
-  auto op = *it++;
-  auto z = primary_exp(prog, *it++);
+  auto x = getVar(toks.at(0));
+  auto y = primary_exp(prog, toks.at(2));
+  auto op = toks.at(3);
+  auto z = primary_exp(prog, toks.at(4));
 
   prog->gen_inst(m[op], x, y, z);
   return true;
 }
 
 bool Compiler::handle_takeaddr(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*(\S+)\s*:=\s*&\s*(\S+)\s*$)");
-  /* stmt assign */
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m2);
-  if (it == std::sregex_token_iterator()) return false;
-  auto x = *it++;
-  auto y = *it++;
+  // ID := &ID
+  if (toks.size() != 3 || toks.at(1) != ":=" ||
+      toks.at(2).at(0) != '&')
+    return false;
+  auto &x = toks.at(0);
+  auto y = toks.at(2).substr(1);
   prog->gen_inst(Opc::la, getVar(x), getVar(y));
   return true;
 }
 
 bool Compiler::handle_deref(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*([^*]\S+)\s*:=\s*\*\s*(\S+)\s*$)");
+  // ID := *ID
   /* stmt assign */
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m2);
-  if (it == std::sregex_token_iterator()) return false;
-  auto x = getVar(*it++);
-  auto y = getVar(*it++);
+  if (toks.size() != 3 || toks.at(0).at(0) == '*' ||
+      toks.at(2).at(0) != '*' || toks.at(1) != ":=")
+    return false;
+
+  auto x = getVar(toks.at(0));
+  auto y = getVar(toks.at(2).substr(1));
   auto tmp = newTemp();
   prog->gen_inst(Opc::la, tmp, y);
   prog->gen_inst(Opc::ld, x, y);
@@ -507,29 +485,26 @@ bool Compiler::handle_deref(
 }
 
 bool Compiler::handle_deref_assign(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*\*(\S+)\s+:=\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m2);
-  if (it == std::sregex_token_iterator()) return false;
+  // *ID := (ID|NUM|&ID)
+  if (toks.size() != 3 || toks.at(0).at(0) != '*' ||
+      toks.at(1) != ":=")
+    return false;
 
-  auto x = getVar(*it++);
-  auto y = primary_exp(prog, *it++);
+  auto x = getVar(toks.at(0).substr(1));
+  auto y = primary_exp(prog, toks.at(2));
   prog->gen_inst(Opc::st, x, y);
   return true;
 }
 
 bool Compiler::handle_goto_(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(R"(^\s*GOTO\s+(\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m1);
-  if (it == std::sregex_token_iterator()) { return false; }
+  // GOTO label
+  if (toks.size() != 2) return false;
 
-  auto label = *it++;
+  auto &label = toks.at(1);
   auto label_ptr = labels[label];
   auto code = prog->gen_jmp(label_ptr);
   if (!label_ptr) {
@@ -539,19 +514,17 @@ bool Compiler::handle_goto_(
 }
 
 bool Compiler::handle_branch(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*IF\s+(#[\+\-]?\d+|[&\*]?\S+)\s*(<|>|<=|>=|==|!=)\s*(#[\+\-]?\d+|[&\*]?\S+)\s+GOTO\s+(\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m4);
-  if (it == std::sregex_token_iterator()) return false;
+  // IF a < b GOTO label
+  if (toks.size() != 6 || toks.at(4) != "GOTO")
+    return false;
 
-  auto x = primary_exp(prog, *it++);
-  auto opc = *it++;
-  auto y = primary_exp(prog, *it++);
+  auto x = primary_exp(prog, toks.at(1));
+  auto &opc = toks.at(2);
+  auto y = primary_exp(prog, toks.at(3));
 
-  auto label = *it++;
+  auto label = toks.at(5);
   auto label_ptr = labels[label];
 
   static std::map<std::string, Opc> s2op{
@@ -563,6 +536,8 @@ bool Compiler::handle_branch(
       {"!=", Opc::sne},
   };
 
+  if (s2op.find(opc) == s2op.end()) return false;
+
   auto tmp = newTemp();
   prog->gen_inst(s2op[opc], tmp, x, y);
   auto code = prog->gen_br(tmp, label_ptr);
@@ -573,59 +548,47 @@ bool Compiler::handle_branch(
 }
 
 bool Compiler::handle_ret(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*RETURN\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m1);
-  if (it == std::sregex_token_iterator()) return false;
+  // RETURN exp
+  if (toks.size() != 2) return false;
 
-  auto x = primary_exp(prog, *it++);
+  auto x = primary_exp(prog, toks.at(1));
   prog->gen_inst(Opc::mtcr, CR_RET, x);
   prog->gen_inst(Opc::ret);
   return true;
 }
 
 bool Compiler::handle_dec(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(R"(^\s*DEC\s+(\S+)\s+(\d+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m2);
-  if (it == std::sregex_token_iterator()) return false;
+  // DEC id num
+  if (toks.size() != 3) return false;
 
-  auto x = *it++;
-  auto size = stoi(*it++);
+  auto x = toks.at(1);
+  auto size = stoi(toks.at(2));
   getVar(x, (size + 3) / 4);
   return true;
 }
 
 bool Compiler::handle_arg(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*ARG\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m1);
-  if (it == std::sregex_token_iterator()) return false;
+  // ARG exp
+  if (toks.size() != 2) return false;
 
-  auto tmp = primary_exp(prog, *it++);
+  auto tmp = primary_exp(prog, toks.at(1));
   prog->gen_inst(Opc::mtcr, CR_ARG, tmp);
   return true;
 }
 
 bool Compiler::handle_call(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*(\S+)\s*:=\s*CALL\s+(\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m2);
-  if (it == std::sregex_token_iterator()) return false;
-
-  auto to = *it++;
-  auto f = *it++;
+  // ID := CALL ID
+  if (toks.size() != 4 || toks.at(1) != ":=") return false;
+  auto &to = toks.at(0);
+  auto &f = toks.at(3);
 
   prog->gen_call(funcs[f]);
   prog->gen_inst(Opc::mfcr, getVar(to), CR_RET);
@@ -633,39 +596,32 @@ bool Compiler::handle_call(
 }
 
 bool Compiler::handle_param(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(R"(^\s*PARAM\s+(\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m1);
-  if (it == std::sregex_token_iterator()) return false;
-  prog->gen_inst(Opc::mfcr, getVar(*it++), CR_ARG);
+  // PARAM ID
+  if (toks.size() != 2) return false;
+  prog->gen_inst(Opc::mfcr, getVar(toks.at(1)), CR_ARG);
   return true;
 }
 
 bool Compiler::handle_read(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(R"(^\s*READ\s+(\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m1);
-  if (it == std::sregex_token_iterator()) return false;
+  // READ ID
+  if (toks.size() != 2) return false;
 
-  auto x = *it++;
+  auto &x = toks.at(1);
   prog->gen_inst(Opc::mfcr, getVar(x), CR_SERIAL);
   return true;
 }
 
 bool Compiler::handle_write(
-    Program *prog, const std::string &line) {
+    Program *prog, const TokenList &toks) {
   dprintf("at %s, %d\n", __func__, __LINE__);
-  static std::regex pat(
-      R"(^\s*WRITE\s+(#[\+\-]?\d+|[&\*]?\S+)\s*$)");
-  auto it = std::sregex_token_iterator(
-      line.begin(), line.end(), pat, m1);
-  if (it == std::sregex_token_iterator()) return false;
+  // WRITE ID
+  if (toks.size() != 2) return false;
 
-  auto x = primary_exp(prog, *it++);
+  auto x = primary_exp(prog, toks.at(1));
   prog->gen_inst(Opc::mtcr, CR_SERIAL, x);
   return true;
 }
@@ -711,31 +667,31 @@ std::unique_ptr<Program> Compiler::compile(
     if (tokens.size() == 0) {
       suc = true;
     } else if (tokens[0] == "LABEL") {
-      suc = handle_label(&*prog, line);
+      suc = handle_label(&*prog, tokens);
     } else if (tokens[0] == "FUNCTION") {
-      suc = handle_func(&*prog, line);
+      suc = handle_func(&*prog, tokens);
     } else if (tokens[0] == "GOTO") {
-      suc = handle_goto_(&*prog, line);
+      suc = handle_goto_(&*prog, tokens);
     } else if (tokens[0] == "IF") {
-      suc = handle_branch(&*prog, line);
+      suc = handle_branch(&*prog, tokens);
     } else if (tokens[0] == "RETURN") {
-      suc = handle_ret(&*prog, line);
+      suc = handle_ret(&*prog, tokens);
     } else if (tokens[0] == "DEC") {
-      suc = handle_dec(&*prog, line);
+      suc = handle_dec(&*prog, tokens);
     } else if (tokens[0] == "ARG") {
-      suc = handle_arg(&*prog, line);
+      suc = handle_arg(&*prog, tokens);
     } else if (tokens.size() == 4 && tokens[1] == ":=" &&
-             tokens[2] == "CALL") {
-      suc = handle_call(&*prog, line);
+               tokens[2] == "CALL") {
+      suc = handle_call(&*prog, tokens);
     } else if (tokens[0] == "PARAM") {
-      suc = handle_param(&*prog, line);
+      suc = handle_param(&*prog, tokens);
     } else if (tokens[0] == "READ") {
-      suc = handle_read(&*prog, line);
+      suc = handle_read(&*prog, tokens);
     } else if (tokens[0] == "WRITE") {
-      suc = handle_write(&*prog, line);
+      suc = handle_write(&*prog, tokens);
     } else {
       std::vector<bool (Compiler::*)(
-          Program *, const std::string &)>
+          Program *, const TokenList &)>
           handlers{
               &Compiler::handle_assign,
               &Compiler::handle_arith,
@@ -745,7 +701,7 @@ std::unique_ptr<Program> Compiler::compile(
           };
 
       for (auto &h : handlers) {
-        suc = (this->*h)(&*prog, line);
+        suc = (this->*h)(&*prog, tokens);
         if (suc) break;
       }
     }
