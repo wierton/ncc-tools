@@ -32,7 +32,7 @@ T *lohi_to_ptr(uint32_t lo, uint32_t hi) {
 
 /* clang-format off */
 enum class Exception {
-  NONE, IF, LOAD, STORE, DIV_ZERO, TIMEOUT, OOM, ABORT,
+  NONE, IF, LOAD, STORE, DIV_ZERO, OF, TIMEOUT, OOM, ABORT,
   INVOP,
 };
 

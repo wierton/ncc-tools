@@ -44,6 +44,9 @@ int main(int argc, const char *argv[]) {
     case Exception::DIV_ZERO:
       printf("divided by zero exception\n");
       break;
+    case Exception::OF:
+      printf("divide INT_MIN by -1 exception\n");
+      break;
     case Exception::TIMEOUT:
       printf("run out of instructions\n");
       break;

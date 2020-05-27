@@ -181,9 +181,22 @@ int Program::run(int *eip) {
       if (stack.back().at(rhs) == 0) {
         exception = Exception::DIV_ZERO;
         return -1;
+      } else if (stack.back().at(lhs) == INT_MIN &&
+                 stack.back().at(rhs) == -1) {
+        exception = Exception::OF;
+        return -1;
       } else {
-        stack.back().at(to) =
-            stack.back().at(lhs) / stack.back().at(rhs);
+        int lhsVal = stack.back().at(lhs);
+        int rhsVal = stack.back().at(rhs);
+        if (lhsVal < 0 && rhsVal > 0) {
+          stack.back().at(to) =
+              (lhsVal - rhsVal + 1) / rhsVal;
+        } else if (lhsVal > 0 && rhsVal < 0) {
+          stack.back().at(to) =
+              (lhsVal - rhsVal - 1) / rhsVal;
+        } else {
+          stack.back().at(to) = lhsVal / rhsVal;
+        }
       }
       dprintf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
