@@ -388,7 +388,9 @@ int Compiler::primary_exp(
     Program *prog, const std::string &tok, int to) {
   if (tok[0] == '#') {
     if (to == INT_MAX) to = newTemp();
-    prog->gen_inst(Opc::li, to, std::stoll(&tok[1]));
+    long long value;
+    sscanf(&tok[1], "%lld", &value);
+    prog->gen_inst(Opc::li, to, (int)value);
     return to;
   } else if (tok[0] == '&') {
     auto var = getVar(&tok[1]);
@@ -718,7 +720,6 @@ std::unique_ptr<Program> Compiler::compile(
          i++) {
       if ((this->*handlers[(Stmt)i])(&*prog, line)) {
         if (i == (int)Stmt::func) temps.clear();
-        ;
         suc = true;
         break;
       }
