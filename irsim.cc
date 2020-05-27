@@ -1,14 +1,14 @@
 #include <cstdint>
-#include <fstream>
 #include <cstring>
+#include <fstream>
 
 // #define LOGIR
 // #define DEBUG
 
 #ifdef DEBUG
-#  define dprintf(...) fprintf(stdout, __VA_ARGS__)
+#  define dbgs(...) fprintf(stdout, __VA_ARGS__)
 #else
-#  define dprintf(fmt, ...)
+#  define dbgs(fmt, ...)
 #endif
 
 #include "irsim.h"
@@ -54,26 +54,26 @@ int Program::run(int *eip) {
     int opc = *eip++;
 
 #ifdef DEBUG
-    dprintf("stack:\n");
+    dbgs("stack:\n");
     for (auto d = 0u; d < stack.size(); d++) {
       auto &s = stack[d];
       constexpr int step = 6;
       for (auto i = 0u; i < s.size(); i += step) {
         if (i == 0)
-          dprintf("%02d:%02d:", d, i);
+          dbgs("%02d:%02d:", d, i);
         else
-          dprintf("  :%02d:", i);
+          dbgs("  :%02d:", i);
         for (auto j = i; j < i + step && j < s.size();
              j++) {
-          dprintf(" %08x", s[j]);
+          dbgs(" %08x", s[j]);
         }
-        dprintf("\n");
+        dbgs("\n");
       }
     }
-    dprintf("crs:  ");
+    dbgs("crs:  ");
     for (auto i = 0u; i < ctrl_regs.size(); i++)
-      dprintf(" %08x", ctrl_regs[i]);
-    dprintf("\n");
+      dbgs(" %08x", ctrl_regs[i]);
+    dbgs("\n");
 #endif
 
     switch ((Opc)opc) {
@@ -88,7 +88,7 @@ int Program::run(int *eip) {
       F *f = lohi_to_ptr<F>(ptrlo, ptrhi);
       f(eip);
       eip += nr_args;
-      dprintf("%p: helper %p\n", oldeip, (void *)f);
+      dbgs("%p: helper %p\n", oldeip, (void *)f);
     } break;
     case Opc::la: {
       int to = *eip++;
@@ -96,12 +96,12 @@ int Program::run(int *eip) {
       stack.back().at(to) =
           ((stack.back().begin() + from) - memory.begin()) *
           4;
-      dprintf("%p: la %d, %d\n", oldeip, to, from);
+      dbgs("%p: la %d, %d\n", oldeip, to, from);
     } break;
     case Opc::ld: {
       int to = *eip++;
       int from = stack.back().at(*eip++);
-      dprintf("%p: ld %d, (%d)\n", oldeip, to, from);
+      dbgs("%p: ld %d, (%d)\n", oldeip, to, from);
       if (memory.size() * 4 <= (size_t)from) {
         exception = Exception::LOAD;
         return -1;
@@ -114,7 +114,7 @@ int Program::run(int *eip) {
     case Opc::st: {
       int to = stack.back().at(*eip++);
       int from = *eip++;
-      dprintf("%p: st (%d), %d\n", oldeip, to, from);
+      dbgs("%p: st (%d), %d\n", oldeip, to, from);
       if (memory.size() * 4 <= (size_t)to) {
         exception = Exception::STORE;
         return -1;
@@ -130,14 +130,14 @@ int Program::run(int *eip) {
       int lhs = *eip++;
       stack.back().at(to) = lhs;
       if (lhs < 0 || lhs > 256)
-        dprintf("%p: li %d %08x\n", oldeip, to, lhs);
+        dbgs("%p: li %d %08x\n", oldeip, to, lhs);
       else
-        dprintf("%p: li %d %d\n", oldeip, to, lhs);
+        dbgs("%p: li %d %d\n", oldeip, to, lhs);
     } break;
     case Opc::mov: {
       int to = *eip++;
       int lhs = *eip++;
-      dprintf("%p: mov %d %d\n", oldeip, to, lhs);
+      dbgs("%p: mov %d %d\n", oldeip, to, lhs);
       stack.back().at(to) = stack.back().at(lhs);
     } break;
     case Opc::add: {
@@ -146,7 +146,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) + stack.back().at(rhs);
-      dprintf("%p: add %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: add %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::sub: {
       int to = *eip++;
@@ -154,7 +154,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) - stack.back().at(rhs);
-      dprintf("%p: sub %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: sub %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::mul: {
       int to = *eip++;
@@ -162,7 +162,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) * stack.back().at(rhs);
-      dprintf("%p: mul %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: mul %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::div: {
       int to = *eip++;
@@ -188,12 +188,12 @@ int Program::run(int *eip) {
           stack.back().at(to) = lhsVal / rhsVal;
         }
       }
-      dprintf("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: div %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::jmp: {
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
-      dprintf("%p: jmp %p\n", oldeip,
+      dbgs("%p: jmp %p\n", oldeip,
           lohi_to_ptr<void>(ptrlo, ptrhi));
       eip = lohi_to_ptr<int>(ptrlo, ptrhi);
     } break;
@@ -201,7 +201,7 @@ int Program::run(int *eip) {
       int cond = stack.back().at(*eip++);
       uint64_t ptrlo = *eip++;
       uint64_t ptrhi = *eip++;
-      dprintf("%p: cond %d br %p\n", oldeip, cond,
+      dbgs("%p: cond %d br %p\n", oldeip, cond,
           lohi_to_ptr<void>(ptrlo, ptrhi));
       if (cond) { eip = lohi_to_ptr<int>(ptrlo, ptrhi); }
     } break;
@@ -211,7 +211,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) < stack.back().at(rhs);
-      dprintf("%p: slt %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: slt %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::sle: {
       int to = *eip++;
@@ -219,7 +219,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) <= stack.back().at(rhs);
-      dprintf("%p: sle %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: sle %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::seq: {
       int to = *eip++;
@@ -227,7 +227,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) == stack.back().at(rhs);
-      dprintf("%p: seq %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: seq %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::sge: {
       int to = *eip++;
@@ -235,7 +235,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) >= stack.back().at(rhs);
-      dprintf("%p: sge %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: sge %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::sgt: {
       int to = *eip++;
@@ -243,7 +243,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) > stack.back().at(rhs);
-      dprintf("%p: sgt %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: sgt %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::sne: {
       int to = *eip++;
@@ -251,7 +251,7 @@ int Program::run(int *eip) {
       int rhs = *eip++;
       stack.back().at(to) =
           stack.back().at(lhs) != stack.back().at(rhs);
-      dprintf("%p: sne %d, %d, %d\n", oldeip, to, lhs, rhs);
+      dbgs("%p: sne %d, %d, %d\n", oldeip, to, lhs, rhs);
     } break;
     case Opc::call: {
       int ptrlo = *eip++;
@@ -262,18 +262,18 @@ int Program::run(int *eip) {
                 stack.back().size();
       stack.emplace_back(memory, ptr, 0);
       eip = target;
-      dprintf("%p: call %p\n", oldeip, eip);
+      dbgs("%p: call %p\n", oldeip, eip);
     } break;
     case Opc::ret: {
       assert(stack.size() >= 1);
       stack.pop_back();
       eip = frames.back();
       frames.pop_back();
-      dprintf("%p: ret %p\n", oldeip, eip);
+      dbgs("%p: ret %p\n", oldeip, eip);
     } break;
     case Opc::alloca: {
       int size = *eip++;
-      dprintf("%p: alloca %d\n", oldeip, size);
+      dbgs("%p: alloca %d\n", oldeip, size);
       if (stack.empty()) stack.emplace_back(memory, 0, 0);
 
       int ptr = stack.back().begin() - memory.begin();
@@ -292,22 +292,22 @@ int Program::run(int *eip) {
       switch (from) {
       case CR_COUNT:
         stack.back().at(to) = ctrl_regs.at(from);
-        dprintf("%p: mfcr %d, cr_count\n", oldeip, to);
+        dbgs("%p: mfcr %d, cr_count\n", oldeip, to);
         break;
       case CR_RET:
         stack.back().at(to) = ctrl_regs.at(from);
-        dprintf("%p: mfcr %d, cr_ret\n", oldeip, to);
+        dbgs("%p: mfcr %d, cr_ret\n", oldeip, to);
         break;
       case CR_SERIAL:
         stack.back().at(to) = io.read();
-        dprintf("%p: mfcr %d, cr_serial\n", oldeip, to);
+        dbgs("%p: mfcr %d, cr_serial\n", oldeip, to);
         break;
       case CR_ARG:
         if (args.size()) {
           stack.back().at(to) = args.back();
           args.pop_back();
         }
-        dprintf("%p: mfcr %d, cr_arg\n", oldeip, to);
+        dbgs("%p: mfcr %d, cr_arg\n", oldeip, to);
         break;
       default: abort();
       }
@@ -317,27 +317,27 @@ int Program::run(int *eip) {
       int from = *eip++;
       switch (to) {
       case CR_COUNT:
-        dprintf("%p: mtcr cr_count, %d\n", oldeip, from);
+        dbgs("%p: mtcr cr_count, %d\n", oldeip, from);
         ctrl_regs.at(to) = stack.back().at(from);
         break;
       case CR_RET:
         ctrl_regs.at(to) = stack.back().at(from);
-        dprintf("%p: mtcr cr_ret, %d\n", oldeip, from);
+        dbgs("%p: mtcr cr_ret, %d\n", oldeip, from);
         break;
       case CR_SERIAL:
         io.write(stack.back().at(from));
-        dprintf("%p: mtcr cr_serial, %d\n", oldeip, from);
+        dbgs("%p: mtcr cr_serial, %d\n", oldeip, from);
         break;
       case CR_ARG:
         args.push_back(stack.back().at(from));
-        dprintf("%p: mtcr cr_arg, %d\n", oldeip, from);
+        dbgs("%p: mtcr cr_arg, %d\n", oldeip, from);
         break;
       default: abort();
       }
     } break;
     case Opc::mark:
       ctrl_regs[CR_COUNT]++;
-      dprintf("%p: mark\n", oldeip);
+      dbgs("%p: mark\n", oldeip);
       if (ctrl_regs[CR_COUNT] >= insts_limit) {
         exception = Exception::TIMEOUT;
         return -1;
@@ -381,14 +381,14 @@ int Compiler::primary_exp(
 /* stmt label */
 bool Compiler::handle_label(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // LABEL ID :
   if (toks.size() != 3 || toks.at(2) != ":") return false;
 
   auto &label = toks.at(1);
   auto label_ptr = prog->get_textptr();
   labels[label] = label_ptr;
-  dprintf(
+  dbgs(
       "add label %s, %p\n", label.str().c_str(), label_ptr);
   for (auto *ptr : backfill_labels[label]) {
     ptr[0] = ptr_lo(label_ptr);
@@ -401,7 +401,7 @@ bool Compiler::handle_label(
 /* stmt func */
 bool Compiler::handle_func(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // FUNCTION ID :
   if (toks.size() != 3 || toks.at(2) != ":") return false;
 
@@ -410,7 +410,7 @@ bool Compiler::handle_func(
   funcs[f] = prog->get_textptr();
 
   if (prog->curf[0] == (int)Opc::alloca) {
-    dprintf("alloca %d\n", stack_size + 1);
+    dbgs("alloca %d\n", stack_size + 1);
     prog->curf[1] = stack_size + 1;
     clear_env();
   }
@@ -420,7 +420,7 @@ bool Compiler::handle_func(
 
 bool Compiler::handle_assign(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // ID := (ID|NUM|&ID)
   if (toks.size() != 3 || toks.at(0).at(0) == '*' ||
       toks.at(1) != ":=")
@@ -432,7 +432,7 @@ bool Compiler::handle_assign(
 
 bool Compiler::handle_arith(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // ID := (ID|NUM|&ID) OP (ID|NUM|&ID)
   if (toks.size() != 5 || toks.at(1) != ":=") return false;
 
@@ -456,7 +456,7 @@ bool Compiler::handle_arith(
 
 bool Compiler::handle_takeaddr(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // ID := &ID
   if (toks.size() != 3 || toks.at(1) != ":=" ||
       toks.at(2).at(0) != '&')
@@ -469,7 +469,7 @@ bool Compiler::handle_takeaddr(
 
 bool Compiler::handle_deref(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // ID := *ID
   /* stmt assign */
   if (toks.size() != 3 || toks.at(0).at(0) == '*' ||
@@ -486,7 +486,7 @@ bool Compiler::handle_deref(
 
 bool Compiler::handle_deref_assign(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // *ID := (ID|NUM|&ID)
   if (toks.size() != 3 || toks.at(0).at(0) != '*' ||
       toks.at(1) != ":=")
@@ -500,7 +500,7 @@ bool Compiler::handle_deref_assign(
 
 bool Compiler::handle_goto_(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // GOTO label
   if (toks.size() != 2) return false;
 
@@ -515,7 +515,7 @@ bool Compiler::handle_goto_(
 
 bool Compiler::handle_branch(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // IF a < b GOTO label
   if (toks.size() != 6 || toks.at(4) != "GOTO")
     return false;
@@ -549,7 +549,7 @@ bool Compiler::handle_branch(
 
 bool Compiler::handle_ret(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // RETURN exp
   if (toks.size() != 2) return false;
 
@@ -561,7 +561,7 @@ bool Compiler::handle_ret(
 
 bool Compiler::handle_dec(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // DEC id num
   if (toks.size() != 3) return false;
 
@@ -573,7 +573,7 @@ bool Compiler::handle_dec(
 
 bool Compiler::handle_arg(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // ARG exp
   if (toks.size() != 2) return false;
 
@@ -584,7 +584,7 @@ bool Compiler::handle_arg(
 
 bool Compiler::handle_call(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // ID := CALL ID
   if (toks.size() != 4 || toks.at(1) != ":=") return false;
   auto &to = toks.at(0);
@@ -597,7 +597,7 @@ bool Compiler::handle_call(
 
 bool Compiler::handle_param(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // PARAM ID
   if (toks.size() != 2) return false;
   prog->gen_inst(Opc::mfcr, getVar(toks.at(1)), CR_ARG);
@@ -606,7 +606,7 @@ bool Compiler::handle_param(
 
 bool Compiler::handle_read(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // READ ID
   if (toks.size() != 2) return false;
 
@@ -617,7 +617,7 @@ bool Compiler::handle_read(
 
 bool Compiler::handle_write(
     Program *prog, const TokenList &toks) {
-  dprintf("at %s, %d\n", __func__, __LINE__);
+  dbgs("at %s, %d\n", __func__, __LINE__);
   // WRITE ID
   if (toks.size() != 2) return false;
 
@@ -654,7 +654,7 @@ std::unique_ptr<Program> Compiler::compile(
         ptr_hi(ir), lineno);
 #endif
 
-    dprintf("compile %s\n", line.c_str());
+    dbgs("compile %s\n", line.c_str());
 
     if (line.find_first_not_of("\r\n\v\f\t ") ==
         line.npos) {
@@ -715,7 +715,7 @@ std::unique_ptr<Program> Compiler::compile(
   }
 
   if (prog->curf[0] == (int)Opc::alloca) {
-    dprintf("alloca %d\n", stack_size + 2);
+    dbgs("alloca %d\n", stack_size + 2);
     prog->curf[1] = stack_size + 2;
   }
   prog->gen_inst(Opc::abort);
