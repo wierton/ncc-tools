@@ -10,7 +10,6 @@ int main(int argc, const char *argv[]) {
     return 0;
   }
 
-  // printf("load %s\n", argv[1]);
   std::ifstream ifs(argv[1]);
 
   if (!ifs.good()) {
@@ -21,9 +20,15 @@ int main(int argc, const char *argv[]) {
   using namespace irsim;
   Compiler compiler;
   auto prog = compiler.compile(ifs);
-  prog->setInstsLimit(-1u);
+  prog->setInstsLimit(100000000);
   prog->setMemoryLimit(128 * 1024 * 1024);
-  auto code = prog->run(compiler.getFunction("main"));
+  auto *entry = compiler.getFunction("main");
+  if (!entry) {
+    printf("no main in %s\n", argv[1]);
+    return 0;
+  }
+
+  auto code = prog->run(entry);
   if (code == 0 ||
       prog->getException() == Exception::NONE) {
     printf("return %d, execute %d instructions\n", code,
