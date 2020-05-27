@@ -56,11 +56,6 @@ int main(int argc, const char *argv[]) {
     case Exception::INVOP:
       printf("invalid instruction (bug of irsim)\n");
       break;
-    case Exception::STACK_LIMIT:
-      printf(
-          "exceed the stack limit (depth 65536, max 65536 "
-          "words per stack frame)\n");
-      break;
     default: break;
     }
   }

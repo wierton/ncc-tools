@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,7 +33,7 @@ T *lohi_to_ptr(uint32_t lo, uint32_t hi) {
 /* clang-format off */
 enum class Exception {
   NONE, IF, LOAD, STORE, DIV_ZERO, TIMEOUT, OOM, ABORT,
-  INVOP, STACK_LIMIT,
+  INVOP,
 };
 
 enum class Stmt {
@@ -118,6 +119,57 @@ public:
       : ProgramInput(in), ProgramOutput(out) {}
 };
 
+template <class T>
+class span {
+  std::vector<T> &container;
+  size_t ptr;
+  size_t _size;
+
+public:
+  span() : container(*(std::vector<T> *)nullptr) {}
+  span(std::vector<T> &container, size_t ptr, size_t size)
+      : container(container), ptr(ptr), _size(size) {}
+
+  using iterator = typename std::vector<T>::iterator;
+  using const_iterator =
+      typename std::vector<T>::const_iterator;
+
+  span(span &&) = default;
+  span(const span &) = default;
+  span &operator=(span &&) = default;
+  span &operator=(const span &) = default;
+
+  void resize(size_t newSize) {
+    if (ptr + newSize > container.size())
+      throw std::length_error("invalid new size");
+    _size = newSize;
+  }
+
+  size_t size() const { return _size; }
+
+  iterator begin() { return container.begin() + ptr; }
+  const_iterator begin() const {
+    return container.begin() + ptr;
+  }
+  iterator end() { return container.begin() + ptr + _size; }
+  const_iterator end() const {
+    return container.begin() + ptr + _size;
+  }
+
+  T &at(size_t i) {
+    if (i >= _size) throw std::range_error("out of range");
+    return container.at(ptr + i);
+  }
+  const T &at(size_t i) const {
+    if (i >= _size) throw std::range_error("out of range");
+    return container.at(ptr + i);
+  }
+  T &operator[](size_t i) { return container[ptr + i]; }
+  const T &operator[](size_t i) const {
+    return container[ptr + i];
+  }
+};
+
 class Program {
   ProgramIO io;
 
@@ -134,7 +186,8 @@ class Program {
   /* running environment */
   std::vector<int> args;
   std::vector<int *> frames;
-  std::vector<std::vector<int>> stack;
+  std::vector<int> memory;
+  std::vector<span<int>> stack;
   std::array<uint32_t, 6> ctrl_regs = {};
 
   Exception exception = Exception::NONE;

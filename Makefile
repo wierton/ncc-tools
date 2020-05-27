@@ -1,20 +1,21 @@
 OBJ_DIR := build
 SRCS := irsim.cc main.cc
 OBJS := $(patsubst %.cc,$(OBJ_DIR)/%.o,$(SRCS))
-BIN := $(OBJ_DIR)/irsim
+BIN  := $(OBJ_DIR)/irsim
+CXX  := g++-10
 
 .DEFAULT_GOAL := $(BIN)
-CXXFLAGS := -Iinclude -std=c++17 -O0 -ggdb3 -Wall -MMD
+CXXFLAGS := -Iinclude -std=c++20 -O0 -ggdb3 -Wall -MMD
 -include $(OBJS:.o=.d)
 
 $(BIN): $(OBJS)
 	@echo "+ LNK $@"
-	@g++ $^ -o $@
+	@$(CXX) $^ -o $@
 
 $(OBJ_DIR)/%.o: %.cc
 	@echo "+ CC $<"
 	@mkdir -p $(@D)
-	@g++ -c $(CXXFLAGS) $< -o $@
+	@$(CXX) -c $(CXXFLAGS) $< -o $@
 
 run: $(BIN)
 	@$(BIN) test/sgn.ir

@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 #include <regex>
+#include <span>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -103,27 +104,19 @@ int Program::run(int *eip) {
       int to = *eip++;
       int from = *eip++;
       stack.back().at(to) =
-          ((stack.size() - 1) << 16) | (from * 4);
-      if (stack.size() >= 65536 || from * 4 >= 65536) {
-        exception = Exception::STACK_LIMIT;
-        return -1;
-      }
+          ((stack.back().begin() + from) - memory.begin()) *
+          4;
       dprintf("%p: la %d, %d\n", oldeip, to, from);
     } break;
     case Opc::ld: {
       int to = *eip++;
       int from = stack.back().at(*eip++);
-      int sel = ((unsigned)from >> 16);
-      int addr = from & 0xFFFF;
-      dprintf(
-          "%p: ld %d, (%d:%d)\n", oldeip, to, sel, addr);
-      if ((int)stack.size() <= sel ||
-          (int)stack[sel].size() * 4 <= addr + 4) {
+      dprintf("%p: ld %d, (%d)\n", oldeip, to, from);
+      if (memory.size() * 4 <= (size_t)from) {
         exception = Exception::LOAD;
-        // return -1; // compatible with pysim
+        return -1;
       } else {
-        uint8_t *from_ptr =
-            (uint8_t *)&stack[sel][0] + addr;
+        uint8_t *from_ptr = (uint8_t *)&memory[0] + from;
         uint8_t *to_ptr = (uint8_t *)&stack.back().at(to);
         memcpy(to_ptr, from_ptr, sizeof(int));
       }
@@ -131,20 +124,16 @@ int Program::run(int *eip) {
     case Opc::st: {
       int to = stack.back().at(*eip++);
       int from = *eip++;
-      int sel = ((unsigned)to >> 16);
-      int addr = to & 0xFFFF;
-      if ((int)stack.size() <= sel ||
-          (int)stack[sel].size() * 4 <= addr + 4) {
-        exception = Exception::LOAD;
-        // return -1; // compatible with pysim
+      dprintf("%p: st (%d), %d\n", oldeip, to, from);
+      if (memory.size() * 4 <= (size_t)to) {
+        exception = Exception::STORE;
+        return -1;
       } else {
         uint8_t *from_ptr =
             (uint8_t *)&stack.back().at(from);
-        uint8_t *to_ptr = (uint8_t *)&stack[sel][0] + addr;
+        uint8_t *to_ptr = (uint8_t *)&memory[0] + to;
         memcpy(to_ptr, from_ptr, sizeof(int));
       }
-      dprintf(
-          "%p: st (%d:%d), %d\n", oldeip, sel, addr, from);
     } break;
     case Opc::li: {
       int to = *eip++;
@@ -266,7 +255,9 @@ int Program::run(int *eip) {
       int ptrhi = *eip++;
       int *target = lohi_to_ptr<int>(ptrlo, ptrhi);
       frames.push_back(eip);
-      stack.emplace_back();
+      int ptr = (stack.back().begin() - memory.begin()) +
+                stack.back().size();
+      stack.emplace_back(memory, ptr, 0);
       eip = target;
       dprintf("%p: call %p\n", oldeip, eip);
     } break;
@@ -280,14 +271,17 @@ int Program::run(int *eip) {
     case Opc::alloca: {
       int size = *eip++;
       dprintf("%p: alloca %d\n", oldeip, size);
-      if (stack.empty()) stack.emplace_back();
-      stack.back().resize(size);
-      unsigned used_mem = 0;
-      for (auto &s : stack) used_mem += s.size();
-      if (used_mem >= memory_limit) {
+      if (stack.empty()) stack.emplace_back(memory, 0, 0);
+
+      int ptr = stack.back().begin() - memory.begin();
+      size_t newMemSize = ptr + size;
+      if (newMemSize >= memory_limit) {
         exception = Exception::OOM;
         return -1;
+      } else if (newMemSize > memory.size()) {
+        memory.resize(newMemSize);
       }
+      stack.back().resize(size);
     } break;
     case Opc::mfcr: {
       int to = *eip++;
