@@ -388,8 +388,7 @@ bool Compiler::handle_label(
   auto &label = toks.at(1);
   auto label_ptr = prog->get_textptr();
   labels[label] = label_ptr;
-  dbgs(
-      "add label %s, %p\n", label.str().c_str(), label_ptr);
+  dbgs("add label %s, %p\n", label.c_str(), label_ptr);
   for (auto *ptr : backfill_labels[label]) {
     ptr[0] = ptr_lo(label_ptr);
     ptr[1] = ptr_hi(label_ptr);
