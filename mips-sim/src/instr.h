@@ -176,7 +176,22 @@ make_exec_handler(inv) {
 }
 
 /* temporary strategy: store timer registers in C0 */
-make_exec_handler(syscall) { abort(); }
+make_exec_handler(syscall) {
+  switch (cpu.gpr[R_v0]) {
+  case 1: printf("%d", cpu.gpr[R_a0]); break;
+  case 4: {
+    char *ptr = vaddr_map(cpu.gpr[R_a0], 0);
+    printf("%s", ptr);
+  } break;
+  case 5: {
+    int value = 0;
+    scanf("%d", &value);
+    cpu.gpr[R_v0] = value;
+  } break;
+  case 8: abort();
+  default: abort();
+  }
+}
 
 #define R_SIMPLE(name, op, t)                       \
   make_exec_handler(name) {                         \
