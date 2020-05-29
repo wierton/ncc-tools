@@ -12,15 +12,16 @@
 #include <unistd.h>
 
 #define HALT_PC 0xBFC00380
+#define eprintf(...) fprintf(stderr, ##__VA_ARGS__)
 
-#define Assert(cond, fmt, ...)                             \
-  do {                                                     \
-    if (!(cond)) {                                         \
-      fprintf(stderr,                                      \
-          "Assertion `%s' failed: \e[1;31m" fmt "\e[0m\n", \
-          #cond, ##__VA_ARGS__);                           \
-      abort();                                             \
-    }                                                      \
+#define Assert(cond, fmt, ...)                      \
+  do {                                              \
+    if (!(cond)) {                                  \
+      eprintf("Assertion `%s' failed: \e[1;31m" fmt \
+              "\e[0m\n",                            \
+          #cond, ##__VA_ARGS__);                    \
+      abort();                                      \
+    }                                               \
   } while (0)
 
 typedef uint32_t paddr_t;
@@ -32,6 +33,7 @@ struct {
   uint32_t pc;
 
   vaddr_t br_target;
+  bool is_delayslot;
 } cpu;
 
 typedef struct {
@@ -182,6 +184,22 @@ uint32_t load_elf(const char *elf_file) {
   return elf_entry;
 }
 
+void print_registers(uint32_t instr) {
+  eprintf("$pc:    0x%08x", cpu.pc);
+  eprintf("   ");
+  eprintf("$instr: 0x%08x", instr);
+  eprintf("\n");
+  eprintf("$hi:    0x%08x", cpu.hi);
+  eprintf("   ");
+  eprintf("$lo:    0x%08x", cpu.lo);
+  eprintf("\n");
+
+  for (int i = 0; i < 32; i++) {
+    eprintf("$%s:0x%08x%c", regs[i], cpu.gpr[i],
+        (i + 1) % 4 == 0 ? '\n' : ' ');
+  }
+}
+
 int main(int argc, const char *argv[]) {
   if (argc <= 1) {
     printf("usage: ./mips-sim *.[sS]");
@@ -205,6 +223,10 @@ int main(int argc, const char *argv[]) {
     assert((cpu.pc & 0x3) == 0);
 
     Inst inst = {.val = vaddr_read(cpu.pc, 4)};
+
+#ifdef DEBUG
+    print_registers(inst.val);
+#endif
 
 #include "instr.h"
 

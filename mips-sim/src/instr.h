@@ -21,11 +21,11 @@
  * */
 
 #define make_exec_handler(name) \
-  cpu.pc += 4;                  \
-  goto exit;                    \
-  name:
+  goto inst_end;                \
+  make_label(name)
 #define prepare_delayslot() \
-  cpu.pc = cpu.br_target;   \
+  cpu.is_delayslot = true;  \
+  cpu.pc += 4;              \
   goto exit;
 
 typedef union {
@@ -777,6 +777,16 @@ make_exec_handler(ext) {
   uint32_t mask = (1ull << size) - 1;
 
   cpu.gpr[inst.rt] = ((rs_val & (mask << lsb)) >> lsb);
+}
+
+make_label(inst_end) {
+  if (cpu.is_delayslot) {
+    cpu.pc = cpu.br_target;
+    cpu.is_delayslot = false;
+  } else {
+    cpu.pc += 4;
+  }
+  /* fall through */
 }
 
 make_exit() {}
