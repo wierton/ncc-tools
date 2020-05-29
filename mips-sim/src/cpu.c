@@ -206,18 +206,31 @@ int main(int argc, const char *argv[]) {
     return 0;
   }
 
-  sh("mips-linux-gnu-as %s -EL -o %s.o", argv[1], argv[1]);
-  sh("mips-linux-gnu-ld -entry main -Ttext=0x1000 %s.o -EL "
-     "-o %s.elf",
-      argv[1], argv[1]);
+  int code = sh(
+      "mips-linux-gnu-as %s -EL -o %s.o", argv[1], argv[1]);
+  if (code != 0) {
+    eprintf("mips-linux-gnu-as is required !\n");
+    eprintf("install it by `sudo apt-get install gcc-mips-linux-gnu`\n");
+    return 0;
+  }
+
+  code =
+      sh("mips-linux-gnu-ld -entry main -Ttext=0x1000 %s.o "
+         "-EL -o %s.elf",
+          argv[1], argv[1]);
+  if (code != 0) {
+    eprintf("mips-linux-gnu-ld is required !\n");
+    eprintf("install it by `sudo apt-get install gcc-mips-linux-gnu`\n");
+    return 0;
+  }
 
   char buffer[1024];
   snprintf(buffer, 1023, "%s.elf", argv[1]);
   uint32_t entry = load_elf(buffer);
 
   cpu.pc = entry;
-  cpu.gpr[29] = DDR_SIZE - 4; // set sp
-  cpu.gpr[31] = HALT_PC;
+  cpu.gpr[R_sp] = DDR_SIZE - 4; // set sp
+  cpu.gpr[R_ra] = HALT_PC;
 
   while (true) {
     assert((cpu.pc & 0x3) == 0);

@@ -5,7 +5,7 @@ BIN  := $(OBJ_DIR)/mips-sim
 CXX  := gcc
 
 .DEFAULT_GOAL := $(BIN)
-CXXFLAGS := -Iinclude -std=c11 -O0 -ggdb3 -Wall -MMD
+CXXFLAGS := -Iinclude -O0 -ggdb3 -Wall -MMD
 -include $(OBJS:.o=.d)
 
 $(BIN): $(OBJS)
@@ -18,10 +18,9 @@ $(OBJ_DIR)/%.o: %.c
 	@$(CXX) -c $(CXXFLAGS) $< -o $@
 
 run: $(BIN)
-	@$(BIN) test/test.S
-
-gdb: $(BIN)
-	gdb --args $(BIN) test/add.ir
+	@$(BIN) test/fib.S
 
 clean:
 	rm -rf $(OBJ_DIR)
+	rm -rf test/*.elf
+	rm -rf test/*.o
