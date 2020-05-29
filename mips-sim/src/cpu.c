@@ -89,7 +89,7 @@ static uint8_t ddr[DDR_SIZE];
 static inline __attribute__((always_inline)) uint32_t
 vaddr_read(paddr_t addr, int len) {
   assert(addr < DDR_SIZE && addr + len < DDR_SIZE);
-  return *((uint32_t *)((void *)ddr + addr)) &
+  return *((uint32_t *)((char *)ddr + addr)) &
          (~0u >> ((4 - len) << 3));
 }
 
@@ -118,7 +118,7 @@ size_t get_file_size(const char *img_file) {
   struct stat file_status;
   lstat(img_file, &file_status);
   if (S_ISLNK(file_status.st_mode)) {
-    char *buf = malloc(file_status.st_size + 1);
+    char *buf = (char *)malloc(file_status.st_size + 1);
     size_t size =
         readlink(img_file, buf, file_status.st_size);
     (void)size;
@@ -138,7 +138,7 @@ void *read_file(const char *filename) {
 
   // malloc buf which should be freed by caller
   void *buf = malloc(size);
-  int len = 0;
+  size_t len = 0;
   while (len < size) { len += read(fd, buf, size - len); }
   close(fd);
   return buf;
@@ -150,16 +150,16 @@ uint32_t load_elf(const char *elf_file) {
   /* set symbol file to elf_file */
   const uint32_t elf_magic = 0x464c457f;
 
-  int size = get_file_size(elf_file);
+  size_t size = get_file_size(elf_file);
   void *buf = read_file(elf_file);
   Assert(buf, "file '%s' cannot be opened for read\n",
       elf_file);
 
-  Elf32_Ehdr *elf = buf;
+  Elf32_Ehdr *elf = (Elf32_Ehdr *)buf;
 
   uint32_t elf_entry = elf->e_entry;
 
-  uint32_t *p_magic = buf;
+  uint32_t *p_magic = (uint32_t *)buf;
   Assert(*p_magic == elf_magic, "wrong file format");
   Assert(elf->e_ident[EI_CLASS] == ELFCLASS32,
       "not a 32-bit elf file");
@@ -168,16 +168,16 @@ uint32_t load_elf(const char *elf_file) {
   Assert(elf->e_machine == EM_MIPS, "not a mips elf file");
 
   for (int i = 0; i < elf->e_phnum; i++) {
-    int phdr_off = i * elf->e_phentsize + elf->e_phoff;
-    Elf32_Phdr *ph = (void *)buf + phdr_off;
+    size_t phdr_off = i * elf->e_phentsize + elf->e_phoff;
+    Elf32_Phdr *ph = (Elf32_Phdr *)((char *)buf + phdr_off);
     Assert(phdr_off < size, "ELF32_Phdr out of file");
     Assert(ph->p_offset < size, "ELF32_Ph out of file");
     if (ph->p_type != PT_LOAD) { continue; }
 
     void *ptr = vaddr_map(ph->p_vaddr, ph->p_memsz);
-    memcpy(ptr, buf + ph->p_offset, ph->p_filesz);
-    memset(
-        ptr + ph->p_filesz, 0, ph->p_memsz - ph->p_filesz);
+    memcpy(ptr, (char *)buf + ph->p_offset, ph->p_filesz);
+    memset((char *)ptr + ph->p_filesz, 0,
+        ph->p_memsz - ph->p_filesz);
   }
 
   free(buf);
@@ -210,7 +210,9 @@ int main(int argc, const char *argv[]) {
       "mips-linux-gnu-as %s -EL -o %s.o", argv[1], argv[1]);
   if (code != 0) {
     eprintf("mips-linux-gnu-as is required !\n");
-    eprintf("install it by `sudo apt-get install gcc-mips-linux-gnu`\n");
+    eprintf(
+        "install it by `sudo apt-get install "
+        "gcc-mips-linux-gnu`\n");
     return 0;
   }
 
@@ -220,7 +222,9 @@ int main(int argc, const char *argv[]) {
           argv[1], argv[1]);
   if (code != 0) {
     eprintf("mips-linux-gnu-ld is required !\n");
-    eprintf("install it by `sudo apt-get install gcc-mips-linux-gnu`\n");
+    eprintf(
+        "install it by `sudo apt-get install "
+        "gcc-mips-linux-gnu`\n");
     return 0;
   }
 

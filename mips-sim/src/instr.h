@@ -48,7 +48,7 @@ static const void *special_table[64] = {
     /* 0x18 */ &&mult, &&multu, &&divide, &&divu,
     /* 0x1c */ &&inv, &&inv, &&inv, &&inv,
     /* 0x20 */ &&add, &&addu, &&sub, &&subu,
-    /* 0x24 */ &&and, && or, &&xor, &&nor,
+    /* 0x24 */ &&and_, &&or_, &&xor_, &&nor,
     /* 0x28 */ &&inv, &&inv, &&slt, &&sltu,
     /* 0x2c */ &&inv, &&inv, &&inv, &&inv,
     /* 0x30 */ &&inv, &&inv, &&inv, &&inv,
@@ -180,7 +180,7 @@ make_exec_handler(syscall) {
   switch (cpu.gpr[R_v0]) {
   case 1: printf("%d", cpu.gpr[R_a0]); break;
   case 4: {
-    char *ptr = vaddr_map(cpu.gpr[R_a0], 0);
+    char *ptr = (char *)vaddr_map(cpu.gpr[R_a0], 0);
     printf("%s", ptr);
   } break;
   case 5: {
@@ -190,7 +190,7 @@ make_exec_handler(syscall) {
   } break;
   case 8: {
     int len = cpu.gpr[R_a1];
-    char *ptr = vaddr_map(cpu.gpr[R_a0], len);
+    char *ptr = (char *)vaddr_map(cpu.gpr[R_a0], len);
     assert(ptr);
     for (int i = 0; i < len; i++) ptr[i] = getchar();
   } break;
@@ -209,9 +209,9 @@ make_exec_handler(syscall) {
         (t)cpu.gpr[inst.rs] op(t) cpu.gpr[inst.rt]; \
   }
 
-R_SIMPLE(or, |, uint32_t)
-R_SIMPLE(xor, ^, uint32_t)
-R_SIMPLE(and, &, uint32_t)
+R_SIMPLE(or_, |, uint32_t)
+R_SIMPLE(xor_, ^, uint32_t)
+R_SIMPLE(and_, &, uint32_t)
 R_SIMPLE(addu, +, uint32_t)
 R_SIMPLE(subu, -, uint32_t)
 R_SIMPLE(mul, *, uint32_t)
@@ -458,7 +458,7 @@ make_exec_handler(xori) {
 }
 
 make_exec_handler(sltiu) {
-  cpu.gpr[inst.rt] = cpu.gpr[inst.rs] < inst.simm;
+  cpu.gpr[inst.rt] = cpu.gpr[inst.rs] < (uint32_t)inst.simm;
 }
 
 make_exec_handler(slti) {
