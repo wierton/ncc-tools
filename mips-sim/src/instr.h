@@ -188,8 +188,17 @@ make_exec_handler(syscall) {
     scanf("%d", &value);
     cpu.gpr[R_v0] = value;
   } break;
-  case 8: abort();
-  default: abort();
+  case 8: {
+    int len = cpu.gpr[R_a1];
+    char *ptr = vaddr_map(cpu.gpr[R_a0], len);
+    assert(ptr);
+    for (int i = 0; i < len; i++) ptr[i] = getchar();
+  } break;
+  case 11: putchar(cpu.gpr[R_a0]); break;
+  case 12: cpu.gpr[R_a0] = getchar(); break;
+  case 10: exit(0); break;
+  case 17: exit(0); break;
+  default: eprintf("unimplemented syscall\n");
   }
 }
 
