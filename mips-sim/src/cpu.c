@@ -200,35 +200,70 @@ void print_registers(uint32_t instr) {
   }
 }
 
+const char *find_program(const char *name) {
+  static char buffer[BUFSIZ];
+  const char *s_beg = getenv("PATH");
+  const char *s_end = s_beg;
+  if (!s_beg) {
+    s_beg = s_end = "/bin:/usr/bin:/usr/local/bin";
+  }
+
+  while (*s_end) {
+    while (*s_end && *s_end != ':') s_end++;
+
+    int n = s_end - s_beg;
+    memcpy(buffer, s_beg, n);
+    sprintf(buffer + n, "/%s", name);
+    if (access(buffer, F_OK | X_OK) == 0) return buffer;
+
+    if (!*s_end) break;
+    s_end++;
+    s_beg = s_end;
+  }
+
+  return NULL;
+}
+
+const char *check_and_find(const char *name) {
+  const char *path = find_program(name);
+  if (!path) {
+    eprintf("%s is required !\n", name);
+    eprintf(
+        "install it by `sudo apt-get install "
+        "gcc-mips-linux-gnu`\n");
+    exit(0);
+  }
+  return path;
+}
+
 int main(int argc, const char *argv[]) {
   if (argc <= 1) {
-    printf("usage: ./mips-sim *.[sS]");
+    printf("usage: ./mips-sim *.[sS]\n");
     return 0;
   }
 
-  int code = sh(
-      "mips-linux-gnu-as %s -EL -o %s.o", argv[1], argv[1]);
+  if (access(argv[1], F_OK | R_OK) != 0) {
+    eprintf("unable to open '%s' for reading\n", argv[1]);
+    return 0;
+  }
+
+  const char *as = check_and_find("mips-linux-gnu-as");
+  int code = sh("%s %s -EL -o %s.o", as, argv[1], argv[1]);
   if (code != 0) {
-    eprintf("mips-linux-gnu-as is required !\n");
-    eprintf(
-        "install it by `sudo apt-get install "
-        "gcc-mips-linux-gnu`\n");
+    eprintf("failed to compile %s\n", argv[1]);
     return 0;
   }
 
+  const char *ld = check_and_find("mips-linux-gnu-ld");
   code =
-      sh("mips-linux-gnu-ld -entry main -Ttext=0x1000 %s.o "
-         "-EL -o %s.elf",
-          argv[1], argv[1]);
+      sh("%s -entry main -Ttext=0x1000 %s.o -EL -o %s.elf",
+          ld, argv[1], argv[1]);
   if (code != 0) {
-    eprintf("mips-linux-gnu-ld is required !\n");
-    eprintf(
-        "install it by `sudo apt-get install "
-        "gcc-mips-linux-gnu`\n");
+    eprintf("failed to link %s\n", argv[1]);
     return 0;
   }
 
-  char buffer[1024];
+  static char buffer[1024];
   snprintf(buffer, 1023, "%s.elf", argv[1]);
   uint32_t entry = load_elf(buffer);
 
