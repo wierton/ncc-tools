@@ -1,8 +1,8 @@
 OBJ_DIR := build
-SRCS := src/cpu.c
-OBJS := $(patsubst %.c,$(OBJ_DIR)/%.o,$(SRCS))
+SRCS := $(wildcard src/*.cc)
+OBJS := $(patsubst %.cc,$(OBJ_DIR)/%.o,$(SRCS))
 BIN  := $(OBJ_DIR)/mips-sim
-CXX  := gcc
+CXX  := g++
 
 .DEFAULT_GOAL := $(BIN)
 CXXFLAGS := -Iinclude -O0 -ggdb3 -Wall -MMD
@@ -12,7 +12,7 @@ $(BIN): $(OBJS)
 	@echo "+ LNK $@"
 	@$(CXX) $^ -o $@
 
-$(OBJ_DIR)/%.o: %.c
+$(OBJ_DIR)/%.o: %.cc
 	@echo "+ CC $<"
 	@mkdir -p $(@D)
 	@$(CXX) -c $(CXXFLAGS) $< -o $@

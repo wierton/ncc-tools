@@ -11,8 +11,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "MipsEmu.h"
+
 #define HALT_PC 0xBFC00380
 #define eprintf(...) fprintf(stderr, ##__VA_ARGS__)
+// #define DEBUG
 
 #define Assert(cond, fmt, ...)                      \
   do {                                              \
@@ -24,17 +27,6 @@
     }                                               \
   } while (0)
 
-typedef uint32_t paddr_t;
-typedef uint32_t vaddr_t;
-
-struct {
-  uint32_t gpr[32];
-  uint32_t hi, lo;
-  uint32_t pc;
-
-  vaddr_t br_target;
-  bool is_delayslot;
-} cpu;
 
 typedef struct {
   union {
@@ -82,29 +74,7 @@ enum {
 };
 /* clang-format on */
 
-#define DDR_SIZE (128 * 1024 * 1024) // 0x08000000
-
-static uint8_t ddr[DDR_SIZE];
-
-static inline __attribute__((always_inline)) uint32_t
-vaddr_read(paddr_t addr, int len) {
-  assert(addr < DDR_SIZE && addr + len < DDR_SIZE);
-  return *((uint32_t *)((char *)ddr + addr)) &
-         (~0u >> ((4 - len) << 3));
-}
-
-static inline __attribute__((always_inline)) void
-vaddr_write(paddr_t addr, int len, uint32_t data) {
-  assert(addr < DDR_SIZE && addr + len < DDR_SIZE);
-  memcpy((uint8_t *)ddr + addr, &data, len);
-}
-
-void *vaddr_map(uint32_t addr, uint32_t len) {
-  assert(addr < DDR_SIZE && addr + len < DDR_SIZE);
-  return &ddr[addr];
-}
-
-int sh(const char *fmt, ...) {
+static int sh(const char *fmt, ...) {
   static char buffer[1024];
   va_list ap;
   va_start(ap, fmt);
@@ -114,7 +84,7 @@ int sh(const char *fmt, ...) {
   return system(buffer);
 }
 
-size_t get_file_size(const char *img_file) {
+static size_t get_file_size(const char *img_file) {
   struct stat file_status;
   lstat(img_file, &file_status);
   if (S_ISLNK(file_status.st_mode)) {
@@ -131,7 +101,7 @@ size_t get_file_size(const char *img_file) {
   }
 }
 
-void *read_file(const char *filename) {
+static void *read_file(const char *filename) {
   size_t size = get_file_size(filename);
   int fd = open(filename, O_RDONLY);
   if (fd == -1) return NULL;
@@ -144,16 +114,16 @@ void *read_file(const char *filename) {
   return buf;
 }
 
-uint32_t load_elf(const char *elf_file) {
-  Assert(elf_file, "Need an elf file");
+uint32_t MipsEmu::load_elf(const std::string &elf_file) {
+  Assert(elf_file.size(), "Need an elf file");
 
   /* set symbol file to elf_file */
   const uint32_t elf_magic = 0x464c457f;
 
-  size_t size = get_file_size(elf_file);
-  void *buf = read_file(elf_file);
+  size_t size = get_file_size(elf_file.c_str());
+  void *buf = read_file(elf_file.c_str());
   Assert(buf, "file '%s' cannot be opened for read\n",
-      elf_file);
+      elf_file.c_str());
 
   Elf32_Ehdr *elf = (Elf32_Ehdr *)buf;
 
@@ -175,16 +145,18 @@ uint32_t load_elf(const char *elf_file) {
     if (ph->p_type != PT_LOAD) { continue; }
 
     void *ptr = vaddr_map(ph->p_vaddr, ph->p_memsz);
-    memcpy(ptr, (char *)buf + ph->p_offset, ph->p_filesz);
-    memset((char *)ptr + ph->p_filesz, 0,
-        ph->p_memsz - ph->p_filesz);
+    if (ptr) {
+      memcpy(ptr, (char *)buf + ph->p_offset, ph->p_filesz);
+      memset((char *)ptr + ph->p_filesz, 0,
+          ph->p_memsz - ph->p_filesz);
+    }
   }
 
   free(buf);
   return elf_entry;
 }
 
-void print_registers(uint32_t instr) {
+void MipsEmu::print_registers(uint32_t instr) {
   eprintf("$pc:    0x%08x", cpu.pc);
   eprintf("   ");
   eprintf("$instr: 0x%08x", instr);
@@ -236,43 +208,46 @@ const char *check_and_find(const char *name) {
   return path;
 }
 
-int main(int argc, const char *argv[]) {
-  if (argc <= 1) {
-    printf("usage: ./mips-sim *.[sS]\n");
-    return 0;
-  }
-
-  if (access(argv[1], F_OK | R_OK) != 0) {
-    eprintf("unable to open '%s' for reading\n", argv[1]);
+std::string MipsEmu::compile(const std::string &source) {
+  const char *srcfile = source.c_str();
+  if (access(srcfile, F_OK | R_OK) != 0) {
+    eprintf("unable to open '%s' for reading\n", srcfile);
     return 0;
   }
 
   const char *as = check_and_find("mips-linux-gnu-as");
-  int code = sh("%s %s -EL -o %s.o", as, argv[1], argv[1]);
+  int code = sh("%s %s -EL -o %s.o", as, srcfile, srcfile);
   if (code != 0) {
-    eprintf("failed to compile %s\n", argv[1]);
+    eprintf("failed to compile %s\n", srcfile);
     return 0;
   }
 
   const char *ld = check_and_find("mips-linux-gnu-ld");
   code =
       sh("%s -entry main -Ttext=0x1000 %s.o -EL -o %s.elf",
-          ld, argv[1], argv[1]);
+          ld, srcfile, srcfile);
   if (code != 0) {
-    eprintf("failed to link %s\n", argv[1]);
+    eprintf("failed to link %s\n", srcfile);
     return 0;
   }
 
   static char buffer[1024];
-  snprintf(buffer, 1023, "%s.elf", argv[1]);
-  uint32_t entry = load_elf(buffer);
+  snprintf(buffer, 1023, "%s.elf", srcfile);
+  return buffer;
+}
+
+int MipsEmu::run(const std::string &elf_file) {
+  uint32_t entry = load_elf(elf_file);
 
   cpu.pc = entry;
   cpu.gpr[R_sp] = DDR_SIZE - 4; // set sp
   cpu.gpr[R_ra] = HALT_PC;
 
   while (true) {
-    assert((cpu.pc & 0x3) == 0);
+    if ((cpu.pc & 0x3) != 0) {
+      exception = MipsEmuEx::IF;
+      return -1;
+    }
 
     Inst inst = {.val = vaddr_read(cpu.pc, 4)};
 
@@ -281,6 +256,12 @@ int main(int argc, const char *argv[]) {
 #endif
 
 #include "instr.h"
+
+    counter++;
+    if (counter > limit) {
+      exception = MipsEmuEx::TIMEOUT;
+      return -1;
+    }
 
     if (cpu.pc == HALT_PC) break;
   }

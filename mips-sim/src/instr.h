@@ -3,6 +3,14 @@
 #define make_entry()
 #define make_exit() make_label(exit)
 
+#define InstAssert(cond)                  \
+  do {                                    \
+    if (!(cond)) {                        \
+      this->exception = MipsEmuEx::INVOP; \
+      return -1;                          \
+    }                                     \
+  } while (0)
+
 /*
  * ABS.D ADD.D ADDIU ADD.S ADDU AND ANDI BC1F BC1T BEQ
  * BGEZ BGEZAL BGTZ BLEZ BLTZ BLTZAL BNE BREAK C.EQ.D
@@ -178,7 +186,11 @@ make_exec_handler(inv) {
 /* temporary strategy: store timer registers in C0 */
 make_exec_handler(syscall) {
   switch (cpu.gpr[R_v0]) {
-  case 1: printf("%d", cpu.gpr[R_a0]); break;
+  case 1:
+    printf("%d", cpu.gpr[R_a0]);
+    if (printedNumbers)
+      printedNumbers->push_back(cpu.gpr[R_a0]);
+    break;
   case 4: {
     char *ptr = (char *)vaddr_map(cpu.gpr[R_a0], 0);
     printf("%s", ptr);
@@ -191,20 +203,20 @@ make_exec_handler(syscall) {
   case 8: {
     int len = cpu.gpr[R_a1];
     char *ptr = (char *)vaddr_map(cpu.gpr[R_a0], len);
-    assert(ptr);
-    for (int i = 0; i < len; i++) ptr[i] = getchar();
+    if (ptr)
+      for (int i = 0; i < len; i++) ptr[i] = getchar();
   } break;
   case 11: putchar(cpu.gpr[R_a0]); break;
   case 12: cpu.gpr[R_a0] = getchar(); break;
-  case 10: exit(0); break;
-  case 17: exit(0); break;
+  case 10: return 0; break;
+  case 17: return 0; break;
   default: eprintf("unimplemented syscall\n");
   }
 }
 
 #define R_SIMPLE(name, op, t)                       \
   make_exec_handler(name) {                         \
-    assert(inst.shamt == 0);                        \
+    InstAssert(inst.shamt == 0);                    \
     cpu.gpr[inst.rd] =                              \
         (t)cpu.gpr[inst.rs] op(t) cpu.gpr[inst.rt]; \
   }
@@ -219,31 +231,37 @@ R_SIMPLE(slt, <, int32_t)
 R_SIMPLE(sltu, <, uint32_t)
 
 make_exec_handler(add) {
-  assert(inst.shamt == 0);
+  InstAssert(inst.shamt == 0);
   L64_t ret;
   ret.val = (int64_t)(int32_t)cpu.gpr[inst.rs] +
             (int64_t)(int32_t)cpu.gpr[inst.rt];
   if ((ret.hi & 0x1) != ((ret.lo >> 31) & 1)) {
-    assert(0 && "add overflow\n");
+#ifndef IGNORE_CERTAIN_EXCEPTION
+    this->exception = MipsEmuEx::OVERFLOW;
+    return -1;
+#endif
   } else {
     cpu.gpr[inst.rd] = ret.lo;
   }
 }
 
 make_exec_handler(sub) {
-  assert(inst.shamt == 0);
+  InstAssert(inst.shamt == 0);
   L64_t ret;
   ret.val = (int64_t)(int32_t)cpu.gpr[inst.rs] -
             (int64_t)(int32_t)cpu.gpr[inst.rt];
   if ((ret.hi & 0x1) != ((ret.lo >> 31) & 1)) {
-    assert(0 && "sub overflow\n");
+#ifndef IGNORE_CERTAIN_EXCEPTION
+    this->exception = MipsEmuEx::OVERFLOW;
+    return -1;
+#endif
   } else {
     cpu.gpr[inst.rd] = ret.lo;
   }
 }
 
 make_exec_handler(nor) {
-  assert(inst.shamt == 0);
+  InstAssert(inst.shamt == 0);
   cpu.gpr[inst.rd] = ~(cpu.gpr[inst.rs] | cpu.gpr[inst.rt]);
 }
 
@@ -269,7 +287,7 @@ make_exec_handler(clo) {
 }
 
 make_exec_handler(madd) {
-  assert(inst.rd == 0 && inst.shamt == 0);
+  InstAssert(inst.rd == 0 && inst.shamt == 0);
   L64_t hilo;
   hilo.hi = cpu.hi;
   hilo.lo = cpu.lo;
@@ -280,7 +298,7 @@ make_exec_handler(madd) {
 }
 
 make_exec_handler(maddu) {
-  assert(inst.rd == 0 && inst.shamt == 0);
+  InstAssert(inst.rd == 0 && inst.shamt == 0);
   L64_t hilo;
   hilo.hi = cpu.hi;
   hilo.lo = cpu.lo;
@@ -291,7 +309,7 @@ make_exec_handler(maddu) {
 }
 
 make_exec_handler(msub) {
-  assert(inst.rd == 0 && inst.shamt == 0);
+  InstAssert(inst.rd == 0 && inst.shamt == 0);
   L64_t hilo;
   hilo.hi = cpu.hi;
   hilo.lo = cpu.lo;
@@ -302,7 +320,7 @@ make_exec_handler(msub) {
 }
 
 make_exec_handler(msubu) {
-  assert(inst.rd == 0 && inst.shamt == 0);
+  InstAssert(inst.rd == 0 && inst.shamt == 0);
   L64_t hilo;
   hilo.hi = cpu.hi;
   hilo.lo = cpu.lo;
@@ -313,7 +331,7 @@ make_exec_handler(msubu) {
 }
 
 make_exec_handler(mult) {
-  assert(inst.rd == 0 && inst.shamt == 0);
+  InstAssert(inst.rd == 0 && inst.shamt == 0);
   int64_t prod = (int64_t)(int32_t)cpu.gpr[inst.rs] *
                  (int64_t)(int32_t)cpu.gpr[inst.rt];
   cpu.lo = (uint32_t)prod;
@@ -321,7 +339,7 @@ make_exec_handler(mult) {
 }
 
 make_exec_handler(multu) {
-  assert(inst.rd == 0 && inst.shamt == 0);
+  InstAssert(inst.rd == 0 && inst.shamt == 0);
   uint64_t prod = (uint64_t)cpu.gpr[inst.rs] *
                   (uint64_t)cpu.gpr[inst.rt];
   cpu.lo = (uint32_t)prod;
@@ -329,7 +347,7 @@ make_exec_handler(multu) {
 }
 
 make_exec_handler(divide) {
-  assert(inst.rd == 0 && inst.shamt == 0);
+  InstAssert(inst.rd == 0 && inst.shamt == 0);
   cpu.lo =
       (int32_t)cpu.gpr[inst.rs] / (int32_t)cpu.gpr[inst.rt];
   cpu.hi =
@@ -337,30 +355,30 @@ make_exec_handler(divide) {
 }
 
 make_exec_handler(divu) {
-  assert(inst.rd == 0 && inst.shamt == 0);
+  InstAssert(inst.rd == 0 && inst.shamt == 0);
   cpu.lo = cpu.gpr[inst.rs] / cpu.gpr[inst.rt];
   cpu.hi = cpu.gpr[inst.rs] % cpu.gpr[inst.rt];
 }
 
 make_exec_handler(sll) {
-  assert(inst.rs == 0);
+  InstAssert(inst.rs == 0);
   cpu.gpr[inst.rd] = cpu.gpr[inst.rt] << inst.shamt;
 }
 
 make_exec_handler(sllv) {
-  assert(inst.shamt == 0);
+  InstAssert(inst.shamt == 0);
   cpu.gpr[inst.rd] = cpu.gpr[inst.rt]
                      << (cpu.gpr[inst.rs] & 0x1f);
 }
 
 make_exec_handler(sra) {
-  assert(inst.rs == 0);
+  InstAssert(inst.rs == 0);
   cpu.gpr[inst.rd] =
       (int32_t)cpu.gpr[inst.rt] >> inst.shamt;
 }
 
 make_exec_handler(srav) {
-  assert(inst.shamt == 0);
+  InstAssert(inst.shamt == 0);
   cpu.gpr[inst.rd] = (int32_t)cpu.gpr[inst.rt] >>
                      (cpu.gpr[inst.rs] & 0x1f);
 }
@@ -373,7 +391,7 @@ make_exec_handler(srl) {
     cpu.gpr[inst.rd] =
         (rt_val >> sa) | (rt_val << (32 - sa));
   } else {
-    assert(inst.rs == 0);
+    InstAssert(inst.rs == 0);
     cpu.gpr[inst.rd] = cpu.gpr[inst.rt] >> inst.shamt;
   }
 }
@@ -386,46 +404,50 @@ make_exec_handler(srlv) {
     cpu.gpr[inst.rd] =
         (rt_val >> sa) | (rt_val << (32 - sa));
   } else {
-    assert(inst.shamt == 0);
+    InstAssert(inst.shamt == 0);
     cpu.gpr[inst.rd] =
         cpu.gpr[inst.rt] >> (cpu.gpr[inst.rs] & 0x1f);
   }
 }
 
 make_exec_handler(movn) {
-  assert(inst.shamt == 0);
+  InstAssert(inst.shamt == 0);
   if (cpu.gpr[inst.rt] != 0)
     cpu.gpr[inst.rd] = cpu.gpr[inst.rs];
 }
 
 make_exec_handler(movz) {
-  assert(inst.shamt == 0);
+  InstAssert(inst.shamt == 0);
   if (cpu.gpr[inst.rt] == 0)
     cpu.gpr[inst.rd] = cpu.gpr[inst.rs];
 }
 
 make_exec_handler(mfhi) {
-  assert(inst.rs == 0 && inst.rt == 0 && inst.shamt == 0);
+  InstAssert(
+      inst.rs == 0 && inst.rt == 0 && inst.shamt == 0);
   cpu.gpr[inst.rd] = cpu.hi;
 }
 
 make_exec_handler(mthi) {
-  assert(inst.rt == 0 && inst.rd == 0 && inst.shamt == 0);
+  InstAssert(
+      inst.rt == 0 && inst.rd == 0 && inst.shamt == 0);
   cpu.hi = cpu.gpr[inst.rs];
 }
 
 make_exec_handler(mflo) {
-  assert(inst.rs == 0 && inst.rt == 0 && inst.shamt == 0);
+  InstAssert(
+      inst.rs == 0 && inst.rt == 0 && inst.shamt == 0);
   cpu.gpr[inst.rd] = cpu.lo;
 }
 
 make_exec_handler(mtlo) {
-  assert(inst.rt == 0 && inst.rd == 0 && inst.shamt == 0);
+  InstAssert(
+      inst.rt == 0 && inst.rd == 0 && inst.shamt == 0);
   cpu.lo = cpu.gpr[inst.rs];
 }
 
 make_exec_handler(lui) {
-  assert(inst.rs == 0);
+  InstAssert(inst.rs == 0);
   cpu.gpr[inst.rt] = inst.uimm << 16;
 }
 
@@ -435,7 +457,7 @@ make_exec_handler(addi) {
   ret.val = (int64_t)(int32_t)cpu.gpr[inst.rs] +
             (int64_t)(int32_t)inst.simm;
   if ((ret.hi & 0x1) != ((ret.lo >> 31) & 1)) {
-    assert(0 && "addi overflow\n");
+    InstAssert(0 && "addi overflow\n");
   } else {
     cpu.gpr[inst.rt] = ret.lo;
   }
@@ -465,12 +487,20 @@ make_exec_handler(slti) {
   cpu.gpr[inst.rt] = (int32_t)cpu.gpr[inst.rs] < inst.simm;
 }
 
-#define CHECK_ALIGNED_ADDR(align, addr)   \
-  assert((((addr) & (align - 1)) == 0) && \
-         "memory access addr is not aligned")
-
-#define CHECK_ALIGNED_ADDR_AdEL CHECK_ALIGNED_ADDR
-#define CHECK_ALIGNED_ADDR_AdES CHECK_ALIGNED_ADDR
+#define CHECK_ALIGNED_ADDR_AdEL(align, addr) \
+  do {                                       \
+    if (((addr) & (align - 1)) != 0) {       \
+      this->exception = MipsEmuEx::LOAD;     \
+      return -1;                             \
+    }                                        \
+  } while (0)
+#define CHECK_ALIGNED_ADDR_AdES(align, addr) \
+  do {                                       \
+    if (((addr) & (align - 1)) != 0) {       \
+      this->exception = MipsEmuEx::STORE;    \
+      return -1;                             \
+    }                                        \
+  } while (0)
 
 make_exec_handler(swl) {
   uint32_t waddr = cpu.gpr[inst.rs] + inst.simm;
@@ -594,7 +624,7 @@ make_exec_handler(bnel) {
 }
 
 make_exec_handler(blezl) {
-  assert(inst.rt == 0);
+  InstAssert(inst.rt == 0);
   if ((int32_t)cpu.gpr[inst.rs] <= 0) {
     cpu.br_target = cpu.pc + (inst.simm << 2) + 4;
     prepare_delayslot();
@@ -676,7 +706,7 @@ make_exec_handler(bne) {
 }
 
 make_exec_handler(blez) {
-  assert(inst.rt == 0);
+  InstAssert(inst.rt == 0);
   if ((int32_t)cpu.gpr[inst.rs] <= 0)
     cpu.br_target = cpu.pc + (inst.simm << 2) + 4;
   else
@@ -733,7 +763,7 @@ make_exec_handler(jal) {
 }
 
 make_exec_handler(jalr) {
-  assert(inst.rt == 0 && inst.shamt == 0);
+  InstAssert(inst.rt == 0 && inst.shamt == 0);
   cpu.gpr[inst.rd] = cpu.pc + 8;
   cpu.br_target = cpu.gpr[inst.rs];
   prepare_delayslot();
@@ -745,7 +775,7 @@ make_exec_handler(j) {
 }
 
 make_exec_handler(jr) {
-  assert(inst.rt == 0 && inst.rd == 0);
+  InstAssert(inst.rt == 0 && inst.rd == 0);
   cpu.br_target = cpu.gpr[inst.rs];
   prepare_delayslot();
 }
@@ -769,7 +799,7 @@ make_exec_handler(wsbh) {
 make_exec_handler(ins) {
   uint32_t lsb = inst.shamt;
   uint32_t msb = inst.rd;
-  assert(lsb <= msb);
+  InstAssert(lsb <= msb);
   uint32_t rs_val = cpu.gpr[inst.rs];
   uint32_t rt_val = cpu.gpr[inst.rt];
   uint32_t mask = (1ull << (msb - lsb + 1)) - 1;
